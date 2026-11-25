@@ -43,7 +43,9 @@ export async function fileToPages(file, progress = () => {}) {
 export async function importFileAsNote(file, folder, progress) {
   const pages = await fileToPages(file, progress);
   const now = Date.now();
-  const title = file.name.replace(/\.[^.]+$/, '').replace(/[_]+/g, ' ').trim();
+  const title = file.name.replace(/\.[^.]+$/, '')
+    .replace(/_\d{6}_\d{6}$/, '')          // Samsung-Zeitstempel (JJMMTT_HHMMSS) entfernen
+    .replace(/[_]+/g, ' ').trim() || 'Import';
   return {
     id: uid(), title, folder: folder || '', paper: 'lined', pages,
     createdAt: file.lastModified || now, updatedAt: now, deleted: false, dirty: true,
@@ -107,22 +109,38 @@ async function imageToPage(blob) {
 
 /* ---------------- Text ---------------- */
 
+const CHARS_PER_LINE = 62;   // ca. Zeichen pro Zeile bei Textfeldbreite 840 und 24px Schrift
+const LINES_PER_PAGE = 30;
+export const SDOCX_TEXT_MARK = 'Aus Samsung Notes übernommener Text';
+
 function textToPages(text) {
-  // ca. 30 Zeilen pro A4-Seite
-  const lines = text.replace(/\r/g, '').split('\n');
-  const perPage = 30;
+  // Absätze auf A4-Seiten verteilen; lange Absätze zählen als mehrere Zeilen
+  const paras = text.replace(/\r/g, '').split('\n');
   const pages = [];
-  for (let i = 0; i < Math.max(1, lines.length); i += perPage) {
+  let cur = [], used = 0;
+  const flush = () => {
     const p = newPage();
-    p.texts.push({ id: uid(), x: 100, y: 82, w: 840, html: textToHTML(lines.slice(i, i + perPage).join('\n')) });
+    p.texts.push({ id: uid(), x: 100, y: 82, w: 840, html: textToHTML(cur.join('\n')) });
     pages.push(p);
+    cur = []; used = 0;
+  };
+  for (const para of paras) {
+    const lines = Math.max(1, Math.ceil(para.length / CHARS_PER_LINE));
+    if (used + lines > LINES_PER_PAGE && cur.length) flush();
+    cur.push(para); used += lines;
   }
+  if (cur.length || !pages.length) flush();
   return pages;
 }
 
+const pause = () => new Promise(r => setTimeout(r, 0));   // Oberfläche zwischendurch reagieren lassen
+
 /* ---------------- Samsung Notes (.sdocx) ---------------- */
-// .sdocx ist ein ZIP-Container mit proprietären Binärdateien. Handschrift-Striche sind nicht
-// offen dokumentiert; wir übernehmen daher eingebettete Bilder, Seitenvorschauen und Text.
+// .sdocx ist ein ZIP-Container mit proprietären Binärdateien. Handschrift-Striche (*.page) und
+// Seitenbilder (*.spi) sind in einem nicht dokumentierten Samsung-Format. Übernommen werden
+// eingefügte Bilder/Scans und getippter Text.
+
+const MAX_TEXT = 60_000;   // Schutz: niemals Megabytes an "Text" erzeugen
 
 async function sdocxToPages(file, progress) {
   await loadScript(JSZIP);
@@ -136,59 +154,83 @@ async function sdocxToPages(file, progress) {
   const thumbs = entries.filter(f => /\.(png|jpe?g|webp)$/i.test(f.name) && /thumbnail|thumb_/i.test(f.name));
   const pages = [];
 
-  // 1. Eingebettete Bilder/Seitenvorschauen (größte zuerst ausgewählt, ursprüngliche Reihenfolge bleibt)
+  // 1. Eingefügte Bilder / Scans
   const pick = images.length ? images : thumbs;
+  let n = 0;
   for (const f of pick) {
+    progress(`${file.name}: Bild ${++n} / ${pick.length}`);
     const data = await f.async('uint8array');
     if (data.length < 4000) continue;     // Icons & Mini-Vorschauen überspringen
     const type = /\.png$/i.test(f.name) ? 'image/png' : /\.webp$/i.test(f.name) ? 'image/webp' : 'image/jpeg';
     try { pages.push(await imageToPage(new Blob([data], { type }))); } catch { /* kaputtes Bild */ }
+    await pause();
   }
 
-  // 2. Text heuristisch aus den Binärdaten (UTF-16LE) ziehen
-  const textChunks = [];
-  for (const f of entries) {
-    if (/\.(png|jpe?g|webp|bmp|gif|xml|json|txt|spi|mp3|m4a|amr|3ga|mp4)$/i.test(f.name)) continue;
-    textChunks.push(...extractUtf16(await f.async('uint8array')));
-  }
+  // 2. Getippter Text (UTF-16 in note.note und den Seitendateien), streng gefiltert
+  const sources = entries.filter(f => /\.(note|page)$/i.test(f.name))
+    .sort((a, b) => (b.name.endsWith('.note') ? 1 : 0) - (a.name.endsWith('.note') ? 1 : 0));
   const seen = new Set();
-  const NOISE = /^(arial|roboto|samsung\w*|sans-serif|serif|monospace|default|normal|sec\w*|true|false|null)$/i;
-  const text = textChunks.filter(t => !NOISE.test(t) && !seen.has(t) && seen.add(t)).join('\n');
+  const chunks = [];
+  let total = 0;
+  n = 0;
+  for (const f of sources) {
+    if (total >= MAX_TEXT) break;
+    progress(`${file.name}: Text suchen ${++n} / ${sources.length}`);
+    const bytes = await f.async('uint8array');
+    for (const s of await extractText(bytes)) {
+      const key = s.toLowerCase();
+      if (seen.has(key) || total >= MAX_TEXT) continue;
+      // Bruchstücke, die schon in einem längeren Text enthalten sind, weglassen
+      if (chunks.some(c => c.toLowerCase().includes(key))) continue;
+      seen.add(key); chunks.push(s); total += s.length;
+    }
+    await pause();
+  }
 
-  if (text.trim()) {
-    const tp = textToPages(text);
-    tp[0].texts[0].html = '<div><b>Aus Samsung Notes übernommener Text:</b></div>' + tp[0].texts[0].html;
+  if (chunks.length) {
+    const tp = textToPages(chunks.join('\n'));
+    tp[0].texts[0].html = `<div><b>${SDOCX_TEXT_MARK} (ohne Handschrift):</b></div>` + tp[0].texts[0].html;
     pages.push(...tp);
   }
-  if (!pages.length) {
-    const p = newPage();
-    p.texts.push({
-      id: uid(), x: 100, y: 82, w: 820,
-      html: textToHTML(`„${file.name}“ enthält nur Handschrift, die nicht direkt lesbar ist.\n\nBitte in Samsung Notes als PDF exportieren:\nNotiz öffnen → ⋮ → Als Datei speichern → PDF\nund die PDF hier importieren – dann bleibt alles exakt erhalten.`),
-    });
-    pages.push(p);
-  }
+  const hint = newPage();
+  hint.texts.push({
+    id: uid(), x: 100, y: 82, w: 820,
+    html: textToHTML(`Hinweis zu „${file.name}“:\nHandschrift aus Samsung Notes ist in einem geheimen Format gespeichert und kann nicht direkt übernommen werden.\n\nDamit alles 1:1 erhalten bleibt (Handschrift, Zeichnungen, Layout):\nIn Samsung Notes die Notiz öffnen → ⋮ → Als Datei speichern → PDF\nund die PDF hier importieren. Danach kannst du auf den Seiten weiterschreiben.`),
+  });
+  pages.push(hint);
   return pages;
 }
 
-function extractUtf16(bytes) {
+const TEXT_OK = new Set([...'ÄÖÜäöüßéèêàâçñ€–—„“”‚‘’…•·°²³']);
+
+/** Sucht lesbaren Text (UTF-16LE) in Binärdaten – an geraden und ungeraden Byte-Positionen. */
+async function extractText(bytes) {
   const out = [];
-  let cur = '';
-  const flush = () => {
-    const s = cur.trim();
-    // nur "echte" Texte: genug Buchstaben, nicht nur IDs/Pfade
-    if (s.length >= 3 && /\p{L}{2}/u.test(s) && !/^[\w.-]+\.(png|jpe?g|page|note|dat|spi|xml)$/i.test(s)
-        && !/^[0-9a-f-]{16,}$/i.test(s) && (s.match(/\p{L}/gu) || []).length / s.length > 0.5) out.push(s);
-    cur = '';
-  };
-  for (let i = 0; i + 1 < bytes.length; i += 2) {
-    const c = bytes[i] | (bytes[i + 1] << 8);
-    const ok = (c >= 0x20 && c < 0x7f) || (c >= 0xa0 && c < 0x2000) || c === 0x20ac || c === 0x201e || c === 0x201c || c === 0x2013;
-    if (ok) cur += String.fromCharCode(c);
-    else if (c === 0x0a || c === 0x0d) { cur += '\n'; }
-    else flush();
+  for (const off of [0, 1]) {
+    let cur = '';
+    const flush = () => {
+      const s = cur.replace(/\s+/g, ' ').trim();
+      cur = '';
+      if (s.length < 4 || s.length > 4000) return;
+      const letters = (s.match(/[A-Za-zÄÖÜäöüß]/g) || []).length;
+      if (letters / s.length < 0.65) return;
+      // echte Wörter: Großbuchstabe/Kleinbuchstabe gefolgt von mind. 2 Kleinbuchstaben
+      const words = s.split(' ').filter(w => /^[(\-–•„"]*[A-Za-zÄÖÜäöüß][a-zäöüß]{2,}[.,:;!?)"“]*$/.test(w)).length;
+      const tokens = s.split(' ').length;
+      if (words >= 2 && words / tokens >= 0.5) out.push(s);
+      else if (tokens === 1 && /^[A-ZÄÖÜ][a-zäöüß]{3,}$/.test(s)) out.push(s);   // einzelne Überschrift wie "Genetik"
+    };
+    for (let i = off; i + 1 < bytes.length; i += 2) {
+      const c = bytes[i] | (bytes[i + 1] << 8);
+      if ((c >= 0x20 && c < 0x7f) || (c >= 0xa0 && TEXT_OK.has(String.fromCharCode(c)))) {
+        cur += String.fromCharCode(c);
+        if (cur.length > 4000) flush();
+      } else if (c === 0x0a || c === 0x0d || c === 0x2029) cur += ' ';
+      else if (cur) flush();
+      if ((i & 0x3fffff) === off) await pause();   // alle ~4 MB kurz Luft holen
+    }
+    flush();
   }
-  flush();
   return out;
 }
 

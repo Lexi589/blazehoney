@@ -1,6 +1,6 @@
 import { db, uid } from './db.js';
 import { Editor, newPage } from './editor.js';
-import { importFileAsNote, fileToPages, exportBackup, readBackup } from './import.js';
+import { importFileAsNote, fileToPages, exportBackup, readBackup, SDOCX_TEXT_MARK } from './import.js';
 import { Sync } from './sync.js';
 import { escapeHTML } from './sanitize.js';
 import { platform } from './transport.js';
@@ -117,7 +117,9 @@ async function openNote(note) {
     db.setMeta('lastNote', note.id);
     if (window.matchMedia('(max-width: 760px)').matches) document.body.classList.add('side-hidden');
   }
+  if (note) await db.setMeta('openingNote', note.id);
   editor.load(note, { readOnly: !!(note && note.deleted) });
+  if (note) setTimeout(() => db.setMeta('openingNote', null), 1500);
   renderList();
 }
 
@@ -596,20 +598,53 @@ async function init() {
 
   state.extraFolders = await db.getMeta('folders', []);
   state.notes = await db.allNotes();
+  await repairBrokenImports();
   await sync.loadConfig();
   sync.onStatus(sync.configured ? 'ok' : 'off', sync.configured ? 'Sync bereit' : 'Sync: nicht eingerichtet');
   setupAutoSync();
 
   const lastId = await db.getMeta('lastNote');
+  // Schutz: Ist die App beim letzten Öffnen dieser Notiz abgestürzt, nicht wieder automatisch öffnen
+  const crashedOn = await db.getMeta('openingNote');
+  await db.setMeta('openingNote', null);
+  if (crashedOn && crashedOn === lastId) {
+    await db.setMeta('lastNote', null);
+    document.body.classList.add('no-note'); renderList();
+    toast('Die zuletzt geöffnete Notiz hat die App blockiert und wurde nicht automatisch geöffnet.', 8000);
+    if (sync.configured) syncNow();
+    return finishInit();
+  }
   const last = state.notes.find(n => n.id === lastId && !n.deleted);
   if (last) openNote(last);
   else { document.body.classList.add('no-note'); renderList(); }
   if (sync.configured) syncNow();
 
+  finishInit();
+}
+
+function finishInit() {
   document.body.dataset.platform = platform;
   if (platform !== 'web') $('#file-input').removeAttribute('accept');   // Android kennt .sdocx nicht als Dateityp
   if (platform === 'web' && 'serviceWorker' in navigator && window.isSecureContext) {
     navigator.serviceWorker.register('sw.js').catch(err => console.warn('Service Worker:', err));
+  }
+}
+
+/** Repariert Notizen, die eine ältere Version beim .sdocx-Import mit Datenmüll gefüllt hat. */
+async function repairBrokenImports() {
+  for (const n of state.notes) {
+    const first = n.pages.findIndex(p => p.texts.some(t => (t.html || '').includes('Aus Samsung Notes übernommener Text:')));
+    if (first < 0) continue;
+    const size = n.pages.reduce((a, p) => a + p.texts.reduce((b, t) => b + (t.html || '').length, 0), 0);
+    if (size < 150_000) continue;
+    // alle reinen Textseiten ab der Markierung entfernen, Bild-/Scan-Seiten behalten
+    n.pages = n.pages.filter((p, i) => i < first || p.bg || p.strokes.length);
+    const hint = newPage();
+    hint.texts.push({ id: uid(), x: 100, y: 82, w: 820, html: '<div><b>Diese Notiz wurde repariert.</b></div><div>Beim Import ist versehentlich unlesbarer Datenmüll entstanden. Bitte die .sdocx-Datei erneut importieren – oder besser als PDF aus Samsung Notes exportieren.</div>' });
+    n.pages.push(hint);
+    n.updatedAt = Date.now(); n.dirty = true;
+    await db.putNote(n);
+    setTimeout(() => toast(`„${n.title}“ wurde repariert – bitte erneut importieren.`, 8000), 500);
   }
 }
 
