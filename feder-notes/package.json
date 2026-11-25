@@ -1,0 +1,56 @@
+{
+  "name": "feder-notes",
+  "version": "1.1.0",
+  "description": "Notizen mit S Pen und Tastatur – gespeichert in deiner Nextcloud",
+  "private": true,
+  "main": "desktop/main.js",
+  "author": "Lexi589",
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "electron .",
+    "server": "node server/server.js",
+    "build:web": "node scripts/build-web.mjs",
+    "build:win": "electron-builder --win nsis --x64 --publish never",
+    "android:prepare": "npm run build:web && npx cap add android && npx capacitor-assets generate --android --iconBackgroundColor \"#e8590c\" --iconBackgroundColorDark \"#e8590c\" --splashBackgroundColor \"#f6f5f2\" --splashBackgroundColorDark \"#1c1c1e\" && node scripts/patch-android.mjs && npx cap sync android"
+  },
+  "devDependencies": {
+    "@capacitor/android": "6.2.0",
+    "@capacitor/assets": "3.0.5",
+    "@capacitor/cli": "6.2.0",
+    "@capacitor/core": "6.2.0",
+    "electron": "33.2.1",
+    "electron-builder": "25.1.8"
+  },
+  "build": {
+    "appId": "de.feder.notes",
+    "productName": "Feder Notes",
+    "copyright": "Feder Notes",
+    "directories": { "output": "dist" },
+    "files": [
+      "desktop/**",
+      "index.html",
+      "manifest.webmanifest",
+      "css/**",
+      "js/**",
+      "vendor/**",
+      "icons/**",
+      "package.json"
+    ],
+    "win": {
+      "target": ["nsis"],
+      "icon": "icons/icon-512.png",
+      "artifactName": "FederNotes-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Feder Notes"
+    },
+    "fileAssociations": [
+      { "ext": "sdocx", "name": "Samsung Notes", "role": "Viewer" }
+    ]
+  }
+}

@@ -104,20 +104,44 @@
 <!-- ============ Dialoge ============ -->
 <dialog id="dlg-settings">
   <form method="dialog">
-    <h2>Synchronisation</h2>
-    <p class="muted">Starte den mitgelieferten Sync-Server (<code>node server/server.js</code>) auf deinem PC, Raspberry Pi oder Server und trage hier Adresse und Token ein. Alle Geräte mit denselben Daten bleiben synchron.</p>
-    <label>Server-Adresse<input id="set-url" type="url" placeholder="http://192.168.0.10:8787"></label>
-    <label>Token<input id="set-token" type="password" autocomplete="off" placeholder="wird beim Serverstart angezeigt"></label>
+    <h2>Speichern &amp; Synchronisieren</h2>
+    <div class="seg" role="radiogroup">
+      <label><input type="radio" name="set-mode" value="nextcloud" checked> Nextcloud</label>
+      <label><input type="radio" name="set-mode" value="server"> Eigener Sync-Server</label>
+    </div>
+
+    <div id="set-nc">
+      <p class="muted">Deine Notizen werden als Dateien in deiner Nextcloud gespeichert und auf allen Geräten aktuell gehalten.</p>
+      <label>Nextcloud-Adresse<input id="set-nc-url" type="url" placeholder="https://cloud.example.de" autocomplete="url"></label>
+      <label>Benutzername<input id="set-nc-user" autocomplete="username" autocapitalize="off" spellcheck="false"></label>
+      <label>App-Passwort<input id="set-nc-pass" type="password" autocomplete="off" placeholder="xxxxx-xxxxx-xxxxx-xxxxx-xxxxx"></label>
+      <label>Ordner in Nextcloud<input id="set-nc-folder" placeholder="FederNotes" autocapitalize="off" spellcheck="false"></label>
+      <div class="hint">
+        <strong>App-Passwort erstellen:</strong> In Nextcloud oben rechts auf dein Profilbild → <em>Persönliche Einstellungen</em> →
+        <em>Sicherheit</em> → ganz unten bei <em>App-Name</em> „Feder Notes“ eintragen → <em>Neues App-Passwort erstellen</em>.
+        So bleibt dein echtes Passwort geheim, und du kannst den Zugriff jederzeit widerrufen.
+        <span id="set-nc-webhint"><br><strong>Hinweis:</strong> Im normalen Browser blockiert Nextcloud den Zugriff – dafür gibt es die Windows- und Android-App.</span>
+      </div>
+    </div>
+
+    <div id="set-srv" hidden>
+      <p class="muted">Starte den mitgelieferten Sync-Server (<code>node server/server.js</code>) und trage Adresse und Token ein.</p>
+      <label>Server-Adresse<input id="set-url" type="url" placeholder="http://192.168.0.10:8787"></label>
+      <label>Token<input id="set-token" type="password" autocomplete="off" placeholder="wird beim Serverstart angezeigt"></label>
+    </div>
+
     <label class="check"><input type="checkbox" id="set-auto"> Automatisch synchronisieren (jede Minute &amp; beim Schließen)</label>
     <p id="set-result" class="muted"></p>
-    <h2>Datensicherung</h2>
-    <p class="muted">Ohne Server kannst du alles als Backup-Datei exportieren und auf einem anderen Gerät importieren.</p>
-    <div class="row">
-      <button type="button" class="btn" id="btn-backup">Backup exportieren</button>
-    </div>
     <div class="row end">
       <button type="button" class="btn" id="btn-test">Verbindung testen</button>
       <button type="button" class="btn primary" id="btn-save-settings">Speichern</button>
+    </div>
+
+    <h2>Datensicherung</h2>
+    <p class="muted">Zusätzlich kannst du alles als Backup-Datei exportieren.</p>
+    <div class="row">
+      <button type="button" class="btn" id="btn-backup">Backup exportieren</button>
+      <span class="spacer"></span>
       <button class="btn" value="cancel">Schließen</button>
     </div>
   </form>

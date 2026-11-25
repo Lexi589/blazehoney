@@ -4,6 +4,7 @@
 // Wurde dieselbe Notiz auf zwei Geräten geändert, gewinnt die neuere – die andere wird
 // als "Konflikt"-Kopie behalten, damit nie etwas verloren geht.
 import { db, uid } from './db.js';
+import { ncSync, ncTest } from './nextcloud.js';
 
 export class Sync {
   constructor({ getNotes, onRemoteNote, onStatus }) {
@@ -20,7 +21,8 @@ export class Sync {
   }
 
   async saveConfig(cfg) {
-    const changedServer = this.config && (cfg.url !== this.config.url);
+    const target = c => !c ? '' : c.mode === 'nextcloud' ? ['nc', c.ncUrl, c.ncUser, c.ncFolder].join('|') : c.url;
+    const changedServer = this.config && target(cfg) !== target(this.config);
     this.config = cfg;
     await db.setMeta('sync', cfg);
     if (changedServer) {
@@ -33,7 +35,12 @@ export class Sync {
     }
   }
 
-  get configured() { return !!(this.config && this.config.url && this.config.token); }
+  get configured() {
+    const c = this.config;
+    if (!c) return false;
+    if (c.mode === 'nextcloud') return !!(c.ncUrl && c.ncUser && c.ncPass);
+    return !!(c.url && c.token);
+  }
 
   base() { return this.config.url.replace(/\/+$/, ''); }
 
@@ -48,6 +55,7 @@ export class Sync {
   }
 
   async test(cfg) {
+    if (cfg.mode === 'nextcloud') return ncTest(cfg);
     const res = await fetch(cfg.url.replace(/\/+$/, '') + '/api/ping', { headers: { Authorization: 'Bearer ' + cfg.token } });
     if (res.status === 401) throw new Error('Token ungültig');
     if (!res.ok) throw new Error(`Server antwortet mit ${res.status}`);
@@ -64,6 +72,17 @@ export class Sync {
     if (!navigator.onLine) { this.onStatus('err', 'Offline – Änderungen werden später übertragen'); return; }
     this.onStatus('busy', 'Synchronisiere …');
     try {
+      if (this.config.mode === 'nextcloud') await ncSync(this);
+      else await this._syncServer();
+      this.onStatus('ok', (this.config.mode === 'nextcloud' ? 'Nextcloud ' : 'Synchronisiert ') + new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }));
+    } catch (err) {
+      console.error(err);
+      this.onStatus('err', 'Sync-Fehler: ' + (err.message === 'Failed to fetch' ? 'Server nicht erreichbar' : err.message));
+    }
+  }
+
+  async _syncServer() {
+    {
       let rev = await db.getMeta('syncRev', 0);
 
       // 1. Änderungen vom Server holen
@@ -118,10 +137,6 @@ export class Sync {
         }
       }
       await db.setMeta('syncRev', rev);
-      this.onStatus('ok', 'Synchronisiert ' + new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }));
-    } catch (err) {
-      console.error(err);
-      this.onStatus('err', 'Sync-Fehler: ' + (err.message === 'Failed to fetch' ? 'Server nicht erreichbar' : err.message));
     }
   }
 

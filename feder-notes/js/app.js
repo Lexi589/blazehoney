@@ -3,6 +3,8 @@ import { Editor, newPage } from './editor.js';
 import { importFileAsNote, fileToPages, exportBackup, readBackup } from './import.js';
 import { Sync } from './sync.js';
 import { escapeHTML } from './sanitize.js';
+import { platform } from './transport.js';
+import { normalizeNcUrl } from './nextcloud.js';
 
 const $ = sel => document.querySelector(sel);
 const COLORS = ['#1d1d1f', '#1c56c9', '#d6336c', '#2f9e44', '#f08c00', '#ffd43b'];
@@ -362,13 +364,32 @@ async function syncNow() { await flushSave(); await sync.sync(); renderList(); }
 /* ---------------- Dialoge & Menüs ---------------- */
 function openSettings() {
   const cfg = sync.config || {};
+  const mode = cfg.mode || (cfg.url ? 'server' : 'nextcloud');
+  document.querySelector(`input[name=set-mode][value=${mode}]`).checked = true;
   $('#set-url').value = cfg.url || (location.protocol.startsWith('http') && location.port ? location.origin : '');
   $('#set-token').value = cfg.token || '';
+  $('#set-nc-url').value = cfg.ncUrl || '';
+  $('#set-nc-user').value = cfg.ncUser || '';
+  $('#set-nc-pass').value = cfg.ncPass || '';
+  $('#set-nc-folder').value = cfg.ncFolder || 'FederNotes';
+  $('#set-nc-webhint').hidden = platform !== 'web';
   $('#set-auto').checked = cfg.auto !== false;
   $('#set-result').textContent = '';
+  showMode();
   $('#dlg-settings').showModal();
 }
-const readSettings = () => ({ url: $('#set-url').value.trim(), token: $('#set-token').value.trim(), auto: $('#set-auto').checked });
+function showMode() {
+  const nc = document.querySelector('input[name=set-mode]:checked').value === 'nextcloud';
+  $('#set-nc').hidden = !nc;
+  $('#set-srv').hidden = nc;
+}
+const readSettings = () => ({
+  mode: document.querySelector('input[name=set-mode]:checked').value,
+  url: $('#set-url').value.trim(), token: $('#set-token').value.trim(),
+  ncUrl: normalizeNcUrl($('#set-nc-url').value), ncUser: $('#set-nc-user').value.trim(),
+  ncPass: $('#set-nc-pass').value.trim(), ncFolder: $('#set-nc-folder').value.trim().replace(/^\/+|\/+$/g, '') || 'FederNotes',
+  auto: $('#set-auto').checked,
+});
 
 let toastTimer;
 function toast(msg, ms = 2500) {
@@ -511,12 +532,16 @@ function wire() {
   };
 
   $('#btn-settings').onclick = openSettings;
+  document.querySelectorAll('input[name=set-mode]').forEach(r => { r.onchange = showMode; });
   $('#btn-sync').onclick = () => (sync.configured ? syncNow() : openSettings());
   $('#btn-test').onclick = async () => {
     const out = $('#set-result');
     out.textContent = 'Teste …';
-    try { const r = await sync.test(readSettings()); out.textContent = `✓ Verbunden – ${r.notes} Notiz(en) auf dem Server.`; }
-    catch (err) { out.textContent = '✗ ' + (err.message === 'Failed to fetch' ? 'Server nicht erreichbar (Adresse/Netzwerk prüfen)' : err.message); }
+    try {
+      const cfg = readSettings();
+      const r = await sync.test(cfg);
+      out.textContent = `✓ Verbunden – ${r.notes} Notiz(en) ${cfg.mode === 'nextcloud' ? 'in deiner Nextcloud' : 'auf dem Server'}.`;
+    } catch (err) { out.textContent = '✗ ' + (err.message === 'Failed to fetch' ? 'Server nicht erreichbar (Adresse/Netzwerk prüfen)' : err.message); }
   };
   $('#btn-save-settings').onclick = async () => {
     await sync.saveConfig(readSettings());
@@ -581,7 +606,9 @@ async function init() {
   else { document.body.classList.add('no-note'); renderList(); }
   if (sync.configured) syncNow();
 
-  if ('serviceWorker' in navigator && window.isSecureContext) {
+  document.body.dataset.platform = platform;
+  if (platform !== 'web') $('#file-input').removeAttribute('accept');   // Android kennt .sdocx nicht als Dateityp
+  if (platform === 'web' && 'serviceWorker' in navigator && window.isSecureContext) {
     navigator.serviceWorker.register('sw.js').catch(err => console.warn('Service Worker:', err));
   }
 }
