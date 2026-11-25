@@ -1,0 +1,19 @@
+{
+  "name": "Feder Notes",
+  "short_name": "Feder",
+  "description": "Notizen mit S Pen und Tastatur – synchronisiert, offline, mit Import von Samsung-Notes-PDFs.",
+  "lang": "de",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f6f5f2",
+  "theme_color": "#e8590c",
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ],
+  "file_handlers": [
+    { "action": "./", "accept": { "application/pdf": [".pdf"], "application/octet-stream": [".sdocx"] } }
+  ]
+}

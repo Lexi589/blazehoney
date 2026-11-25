@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#f6f5f2" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1c1c1e" media="(prefers-color-scheme: dark)">
+  <title>Feder Notes</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div id="app">
+  <!-- ============ Seitenleiste ============ -->
+  <aside id="sidebar">
+    <div class="side-head">
+      <div class="brand"><img src="icons/icon.svg" alt=""> Feder Notes</div>
+      <button class="icon-btn" id="btn-settings" title="Einstellungen &amp; Synchronisation">⚙</button>
+    </div>
+    <div class="side-search">
+      <input id="search" type="search" placeholder="Suchen (Strg+F)" autocomplete="off">
+    </div>
+    <div class="side-actions">
+      <button class="btn primary" id="btn-new">+ Neue Notiz</button>
+      <button class="btn" id="btn-import" title="PDF, Samsung Notes (.sdocx), Bilder, Text oder Backup importieren">Importieren</button>
+    </div>
+    <nav id="folders"></nav>
+    <div id="note-list" role="list"></div>
+    <div class="side-foot">
+      <span id="sync-status" class="sync-status">Sync: nicht eingerichtet</span>
+      <button class="btn small" id="btn-sync" title="Jetzt synchronisieren (Strg+S)">⟳</button>
+    </div>
+  </aside>
+
+  <!-- ============ Editor ============ -->
+  <main id="main">
+    <header id="toolbar">
+      <button class="icon-btn" id="btn-toggle-side" title="Seitenleiste ein/aus (Strg+\)">☰</button>
+      <input id="note-title" placeholder="Titel" autocomplete="off" spellcheck="false">
+      <select id="note-folder" title="Ordner / Fach"></select>
+
+      <div class="tool-group" id="tools" role="toolbar">
+        <button class="tool" data-tool="pen" title="Stift (Alt+1)">✎</button>
+        <button class="tool" data-tool="highlighter" title="Textmarker (Alt+2)">▍</button>
+        <button class="tool" data-tool="eraser" title="Radierer (Alt+3) – auch S-Pen-Taste">⌫</button>
+        <button class="tool" data-tool="lasso" title="Lasso: auswählen &amp; verschieben (Alt+4)">◌</button>
+        <button class="tool" data-tool="text" title="Textfeld (Alt+5) – oder einfach lostippen">T</button>
+      </div>
+
+      <div class="tool-group" id="colors"></div>
+      <input type="range" id="width" min="1" max="40" step="0.5" title="Strichstärke">
+
+      <div class="tool-group">
+        <button class="icon-btn" id="btn-undo" title="Rückgängig (Strg+Z)">↶</button>
+        <button class="icon-btn" id="btn-redo" title="Wiederholen (Strg+Y)">↷</button>
+      </div>
+      <div class="tool-group">
+        <button class="icon-btn" id="btn-zoom-out" title="Verkleinern (Strg+-)">−</button>
+        <span id="zoom-label">100%</span>
+        <button class="icon-btn" id="btn-zoom-in" title="Vergrößern (Strg++)">+</button>
+      </div>
+      <div class="menu-wrap">
+        <button class="icon-btn" id="btn-more" title="Mehr">⋯</button>
+        <div class="menu" id="more-menu" hidden>
+          <label class="menu-row">Papier
+            <select id="paper">
+              <option value="lined">Liniert</option>
+              <option value="grid">Kariert</option>
+              <option value="dots">Punktraster</option>
+              <option value="blank">Blanko</option>
+            </select>
+          </label>
+          <button data-act="add-page">Neue Seite (Strg+Umschalt+Enter)</button>
+          <button data-act="insert-file">PDF / Bild in diese Notiz einfügen</button>
+          <button data-act="print">Als PDF speichern / drucken (Strg+P)</button>
+          <label class="menu-row"><input type="checkbox" id="opt-finger"> Mit dem Finger zeichnen</label>
+          <button data-act="shortcuts">Tastenkürzel (?)</button>
+          <hr>
+          <button data-act="delete" class="danger">In den Papierkorb</button>
+        </div>
+      </div>
+    </header>
+
+    <div id="trash-bar" hidden>
+      Diese Notiz liegt im Papierkorb.
+      <button class="btn small" id="btn-restore">Wiederherstellen</button>
+      <button class="btn small danger" id="btn-purge">Endgültig löschen</button>
+    </div>
+
+    <div id="pages" tabindex="-1"></div>
+
+    <div id="empty-state">
+      <h2>Keine Notiz geöffnet</h2>
+      <p>Lege eine neue Notiz an (<kbd>Alt</kbd>+<kbd>N</kbd>) oder importiere deine Samsung-Notes-Dateien aus der Schule.</p>
+      <p class="muted">Tipp: Mit dem S Pen schreibst du, mit dem Finger scrollst und zoomst du, und auf der Tastatur kannst du jederzeit einfach lostippen.</p>
+    </div>
+  </main>
+</div>
+
+<input type="file" id="file-input" multiple hidden
+       accept=".pdf,.sdocx,.png,.jpg,.jpeg,.webp,.gif,.txt,.md,.json,application/pdf,image/*,text/plain">
+
+<!-- ============ Dialoge ============ -->
+<dialog id="dlg-settings">
+  <form method="dialog">
+    <h2>Synchronisation</h2>
+    <p class="muted">Starte den mitgelieferten Sync-Server (<code>node server/server.js</code>) auf deinem PC, Raspberry Pi oder Server und trage hier Adresse und Token ein. Alle Geräte mit denselben Daten bleiben synchron.</p>
+    <label>Server-Adresse<input id="set-url" type="url" placeholder="http://192.168.0.10:8787"></label>
+    <label>Token<input id="set-token" type="password" autocomplete="off" placeholder="wird beim Serverstart angezeigt"></label>
+    <label class="check"><input type="checkbox" id="set-auto"> Automatisch synchronisieren (jede Minute &amp; beim Schließen)</label>
+    <p id="set-result" class="muted"></p>
+    <h2>Datensicherung</h2>
+    <p class="muted">Ohne Server kannst du alles als Backup-Datei exportieren und auf einem anderen Gerät importieren.</p>
+    <div class="row">
+      <button type="button" class="btn" id="btn-backup">Backup exportieren</button>
+    </div>
+    <div class="row end">
+      <button type="button" class="btn" id="btn-test">Verbindung testen</button>
+      <button type="button" class="btn primary" id="btn-save-settings">Speichern</button>
+      <button class="btn" value="cancel">Schließen</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlg-import">
+  <form method="dialog">
+    <h2>Dateien importieren</h2>
+    <p id="imp-files" class="muted"></p>
+    <label>In Ordner / Fach<input id="imp-folder" list="folder-datalist" placeholder="z. B. Mathe"></label>
+    <datalist id="folder-datalist"></datalist>
+    <div class="hint">
+      <strong>Samsung Notes:</strong> Am zuverlässigsten ist der Export als PDF
+      (in Samsung Notes: Notiz öffnen → ⋮ → <em>Als Datei speichern</em> → <em>PDF</em>; mehrere Notizen gleichzeitig über
+      lange drücken → <em>Als Datei speichern</em>). Dann bleibt deine Handschrift exakt erhalten und du kannst direkt darauf weiterschreiben.
+      <code>.sdocx</code>-Dateien werden ebenfalls gelesen (Bilder, Seitenvorschauen und Text, soweit enthalten).
+    </div>
+    <div class="row end">
+      <button class="btn" value="cancel">Abbrechen</button>
+      <button class="btn primary" value="ok" id="imp-ok">Importieren</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlg-shortcuts">
+  <form method="dialog">
+    <h2>Tastenkürzel</h2>
+    <table class="keys">
+      <tr><td><em>einfach lostippen</em></td><td>Textfeld an der zuletzt angetippten Stelle (oder unter dem letzten Inhalt)</td></tr>
+      <tr><td><kbd>Alt</kbd>+<kbd>N</kbd> / <kbd>Strg</kbd>+<kbd>N</kbd></td><td>Neue Notiz</td></tr>
+      <tr><td><kbd>Strg</kbd>+<kbd>F</kbd></td><td>Suchen (auch in importierten PDFs)</td></tr>
+      <tr><td><kbd>Strg</kbd>+<kbd>S</kbd></td><td>Jetzt synchronisieren</td></tr>
+      <tr><td><kbd>Strg</kbd>+<kbd>Z</kbd> / <kbd>Strg</kbd>+<kbd>Y</kbd></td><td>Rückgängig / Wiederholen</td></tr>
+      <tr><td><kbd>Alt</kbd>+<kbd>1</kbd>…<kbd>5</kbd></td><td>Stift, Marker, Radierer, Lasso, Text</td></tr>
+      <tr><td><kbd>Alt</kbd>+<kbd>Q</kbd>/<kbd>W</kbd></td><td>Vorherige / nächste Farbe</td></tr>
+      <tr><td><kbd>Strg</kbd>+<kbd>Umschalt</kbd>+<kbd>Enter</kbd></td><td>Neue Seite</td></tr>
+      <tr><td><kbd>Strg</kbd>+<kbd>Enter</kbd> (im Text)</td><td>Neues Textfeld darunter</td></tr>
+      <tr><td><kbd>Strg</kbd>+<kbd>B</kbd>/<kbd>I</kbd>/<kbd>U</kbd></td><td>Fett / Kursiv / Unterstrichen</td></tr>
+      <tr><td><kbd>Strg</kbd>+<kbd>Umschalt</kbd>+<kbd>H</kbd></td><td>Text markieren (gelb)</td></tr>
+      <tr><td><code>- </code> <code>1. </code> <code># </code> <code>[] </code></td><td>Liste, Nummerierung, Überschrift, Checkbox</td></tr>
+      <tr><td><kbd>Entf</kbd> (Lasso)</td><td>Auswahl löschen; Farbe antippen färbt die Auswahl um</td></tr>
+      <tr><td><kbd>Strg</kbd>+<kbd>+</kbd>/<kbd>-</kbd>/<kbd>0</kbd></td><td>Zoom</td></tr>
+      <tr><td><kbd>Strg</kbd>+<kbd>\</kbd></td><td>Seitenleiste ein/aus</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>Text verlassen / Auswahl aufheben</td></tr>
+    </table>
+    <h2>S Pen</h2>
+    <p class="muted">Stift schreibt immer – auch wenn gerade das Textwerkzeug aktiv ist. Seitentaste gedrückt halten = Radierer. Die Handfläche wird ignoriert, solange der Stift in der Nähe ist. Finger: 1 Finger scrollt, 2 Finger zoomen.</p>
+    <div class="row end"><button class="btn primary">OK</button></div>
+  </form>
+</dialog>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
