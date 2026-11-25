@@ -8,7 +8,7 @@
 // Es werden bewusst nur GET/PUT/DELETE benutzt (funktioniert auch mit dem Android-HTTP-Client).
 // Gleichzeitige Änderungen am Inhaltsverzeichnis werden per ETag (If-Match) erkannt.
 import { db } from './db.js';
-import { http, platform } from './transport.js';
+import { http, platform, openExternal } from './transport.js';
 
 export function normalizeNcUrl(url) {
   let u = String(url || '').trim();
@@ -66,14 +66,7 @@ class NC {
     let url = `${this.root}/remote.php/dav/files/${encodeURIComponent(id)}/`;
     for (const part of this.folder) {
       url += encodeURIComponent(part) + '/';
-      let res;
-      try { res = await this.req('MKCOL', url); }
-      catch (err) {
-        if (platform === 'android') {
-          throw new Error(`Bitte in Nextcloud den Ordner „${this.folder.join('/')}“ anlegen (oder einmal mit der Windows-App synchronisieren).`);
-        }
-        throw err;
-      }
+      const res = await this.req('MKCOL', url);
       if (![201, 405].includes(res.status)) throw new Error(`Ordner konnte nicht angelegt werden (${res.status})`);
     }
   }
@@ -209,4 +202,43 @@ function base64ToBlob(b64, type) {
   const arr = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
   return new Blob([arr], { type });
+}
+
+/**
+ * Anmeldung per Nextcloud Login Flow v2: Browser öffnet sich, man bestätigt den Zugriff,
+ * die App bekommt automatisch ein eigenes App-Passwort. Kein Abtippen von Passwörtern.
+ * @returns {Promise<{ncUrl, ncUser, ncPass}>}
+ */
+export async function ncLogin(serverUrl, { onWaiting, isCancelled } = {}) {
+  const root = normalizeNcUrl(serverUrl);
+  if (!root) throw new Error('Bitte die Adresse deiner Nextcloud eingeben');
+  const ua = { 'User-Agent': `Feder Notes (${platform === 'android' ? 'Android' : platform === 'windows' ? 'Windows' : 'Browser'})` };
+  let res;
+  try { res = await http('POST', root + '/index.php/login/v2', { headers: ua }); }
+  catch (err) {
+    if (platform === 'web') throw new Error('Im Browser blockiert Nextcloud die Anmeldung. Bitte die App benutzen.');
+    throw new Error('Nextcloud nicht erreichbar – stimmt die Adresse? (' + (err.message || err) + ')');
+  }
+  if (res.status !== 200) throw new Error(`Unter dieser Adresse wurde keine Nextcloud gefunden (${res.status})`);
+  let flow;
+  try { flow = JSON.parse(res.text); } catch { throw new Error('Unter dieser Adresse wurde keine Nextcloud gefunden'); }
+  await openExternal(flow.login);
+  onWaiting && onWaiting();
+  const deadline = Date.now() + 15 * 60 * 1000;
+  while (Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, 2000));
+    if (isCancelled && isCancelled()) throw new Error('Anmeldung abgebrochen');
+    let poll;
+    try {
+      poll = await http('POST', flow.poll.endpoint, {
+        headers: { ...ua, 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'token=' + encodeURIComponent(flow.poll.token),
+      });
+    } catch { continue; }   // kurz offline? weiter warten
+    if (poll.status === 200) {
+      const d = JSON.parse(poll.text);
+      return { ncUrl: normalizeNcUrl(d.server) || root, ncUser: d.loginName, ncPass: d.appPassword };
+    }
+  }
+  throw new Error('Zeit abgelaufen – bitte nochmal „Anmelden“ tippen');
 }

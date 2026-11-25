@@ -18,8 +18,16 @@ export class Editor {
     this.note = null;
     this.pages = [];                  // [{ data, el, ink, live, bgSheet, textSheet, k }]
     this.tool = 'pen';
-    this.color = '#1d1d1f';
-    this.widths = { pen: 2.5, highlighter: 22, eraser: 18 };
+    this.penKind = 'fountain';       // fountain | ball | pencil | calli
+    // Jeder Stift merkt sich eigene Farbe und Stärke (wie bei Samsung Notes)
+    this.styles = {
+      fountain: { color: '#1d1d1f', width: 2.5 },
+      ball: { color: '#1c56c9', width: 2.2 },
+      pencil: { color: '#444444', width: 2.6 },
+      calli: { color: '#1d1d1f', width: 5 },
+      highlighter: { color: '#ffd43b', width: 22 },
+    };
+    this.eraser = { width: 18, mode: 'stroke' };   // stroke = ganzer Strich, area = nur berührte Stelle
     this.zoom = 1;
     this.fingerDraws = false;
     this.undoStack = [];
@@ -41,6 +49,9 @@ export class Editor {
     }, { passive: false });
     new ResizeObserver(() => this.relayout()).observe(container);
   }
+
+  get styleKey() { return this.tool === 'highlighter' ? 'highlighter' : this.penKind; }
+  get style() { return this.styles[this.styleKey]; }
 
   /* ---------------- Laden & Layout ---------------- */
 
@@ -209,8 +220,20 @@ export class Editor {
     if (e.pointerType === 'pen') this.penActiveUntil = Date.now() + 10_000;
 
     // Finger: scrollen / zoomen (außer "Mit dem Finger zeichnen" ist an)
-    if (e.pointerType === 'touch' && !this.fingerDraws) {
-      if (Date.now() < this.penActiveUntil) return;          // Handballen ignorieren
+    if (e.pointerType === 'touch' && Date.now() < this.penActiveUntil) return;   // Handballen ignorieren
+    if (e.pointerType === 'touch' && this.fingerDraws && this.active && this.active.type === 'touch' && this.active.id !== e.pointerId) {
+      // zweiter Finger: angefangenen Strich verwerfen und stattdessen scrollen/zoomen
+      const a = this.active;
+      this.active = null;
+      if (a.kind === 'draw') this.drawOverlay(a.pv);
+      else if (a.kind === 'erase' && a.removed.length) this.pushHistory({ t: 'replace', pv: a.pv, removed: a.removed, added: a.added });
+      this.touches.set(a.id, { x: a.cx, y: a.cy, sx: a.cx, sy: a.cy, target: a.target, t: 0 });
+      this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, target: e.target, t: 0 });
+      capture(this.container, a.id); capture(this.container, e.pointerId);
+      this.startGesture();
+      return;
+    }
+    if (e.pointerType === 'touch' && (!this.fingerDraws || this.touches.size)) {
       this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, target: e.target, t: Date.now() });
       capture(this.container, e.pointerId);
       this.startGesture();
@@ -246,17 +269,21 @@ export class Editor {
     }
     if (tool !== 'lasso') this.clearSelection();
 
+    const meta = { type: e.pointerType, cx: e.clientX, cy: e.clientY, target: e.target };
     if (tool === 'pen' || tool === 'highlighter') {
-      const st = { tool, color: this.color, width: this.widths[tool], points: [this.pointFromEvent(pv, e)] };
-      this.active = { kind: 'draw', pv, id: e.pointerId, stroke: st, type: e.pointerType };
+      const sk = tool === 'highlighter' ? 'highlighter' : this.penKind;
+      const stl = this.styles[sk];
+      const st = { tool, color: stl.color, width: stl.width, points: [this.pointFromEvent(pv, e)] };
+      if (tool === 'pen') st.kind = this.penKind;
+      this.active = { kind: 'draw', pv, id: e.pointerId, stroke: st, ...meta };
       if (tool === 'pen') this.drawLiveSegment(pv, st);
       else this.drawOverlay(pv, ctx => drawStroke(ctx, st));
     } else if (tool === 'eraser') {
-      this.active = { kind: 'erase', pv, id: e.pointerId, removed: [] };
+      this.active = { kind: 'erase', pv, id: e.pointerId, removed: [], added: [], last: [x, y], ...meta };
       this.eraseAt(pv, x, y);
     } else if (tool === 'lasso') {
       this.clearSelection();
-      this.active = { kind: 'lasso', pv, id: e.pointerId, poly: [[x, y]] };
+      this.active = { kind: 'lasso', pv, id: e.pointerId, poly: [[x, y]], ...meta };
     }
   }
 
@@ -272,6 +299,7 @@ export class Editor {
     const a = this.active;
     if (!a || a.id !== e.pointerId) return;
     e.preventDefault();
+    a.cx = e.clientX; a.cy = e.clientY;
     const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
     const list = events.length ? events : [e];
 
@@ -286,7 +314,7 @@ export class Editor {
       }
       if (a.stroke.tool === 'highlighter') this.drawOverlay(a.pv, ctx => drawStroke(ctx, a.stroke));
     } else if (a.kind === 'erase') {
-      for (const ev of list) { const [x, y] = this.pos(a.pv, ev); this.eraseAt(a.pv, x, y); }
+      for (const ev of list) { const [x, y] = this.pos(a.pv, ev); this.eraseTo(a.pv, x, y); }
     } else if (a.kind === 'lasso') {
       for (const ev of list) a.poly.push(this.pos(a.pv, ev));
       this.drawOverlay(a.pv, ctx => {
@@ -322,7 +350,7 @@ export class Editor {
       this.pushHistory({ t: 'add', pv, strokes: [st] });
     } else if (a.kind === 'erase') {
       this.drawOverlay(pv);
-      if (a.removed.length) this.pushHistory({ t: 'erase', pv, strokes: a.removed });
+      if (a.removed.length) this.pushHistory({ t: 'replace', pv, removed: a.removed, added: a.added });
     } else if (a.kind === 'lasso') {
       this.finishLasso(pv, a.poly);
     } else if (a.kind === 'move') {
@@ -336,13 +364,13 @@ export class Editor {
     const ctx = this.ctx(pv, 'live');
     const pts = st.points;
     const n = pts.length;
-    ctx.fillStyle = ctx.strokeStyle = st.color;
+    applyInk(ctx, st);
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-    if (n === 1) { dot(ctx, pts[0], st.width); return; }
+    if (n === 1) { dot(ctx, pts[0], widthAt(st, pts[0][2], pts[0], pts[0])); return; }
     const a = n >= 3 ? mid(pts[n - 3], pts[n - 2]) : pts[0];
     const c = pts[n - 2];
     const b = mid(pts[n - 2], pts[n - 1]);
-    ctx.lineWidth = penWidth(st.width, c[2]);
+    ctx.lineWidth = widthAt(st, c[2], a, b);
     ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.quadraticCurveTo(c[0], c[1], b[0], b[1]); ctx.stroke();
   }
 
@@ -351,14 +379,32 @@ export class Editor {
     this._raf = requestAnimationFrame(() => { this._raf = null; this.redraw(pv); });
   }
 
-  eraseAt(pv, x, y) {
-    const r = this.widths.eraser;
+  /** Radiert entlang der Bewegung (auch bei schnellen Wischern keine Lücken). */
+  eraseTo(pv, x, y) {
+    const a = this.active;
+    const [lx, ly] = a.last || [x, y];
+    const step = Math.max(2, this.eraser.width / 2);
+    const n = Math.max(1, Math.ceil(Math.hypot(x - lx, y - ly) / step));
+    for (let i = 1; i <= n; i++) this.eraseAt(pv, lx + (x - lx) * i / n, ly + (y - ly) * i / n, i < n);
+    a.last = [x, y];
+  }
+
+  eraseAt(pv, x, y, skipOverlay = false) {
+    const r = this.eraser.width;
+    const a = this.active;
     const hit = pv.data.strokes.filter(st => strokeHit(st, x, y, r));
     if (hit.length) {
-      pv.data.strokes = pv.data.strokes.filter(st => !hit.includes(st));
-      this.active.removed.push(...hit);
+      for (const st of hit) {
+        const pieces = this.eraser.mode === 'area' ? splitStroke(st, x, y, r) : [];
+        const i = pv.data.strokes.indexOf(st);
+        pv.data.strokes.splice(i, 1, ...pieces);
+        const ai = a.added.indexOf(st);
+        if (ai >= 0) a.added.splice(ai, 1); else a.removed.push(st);
+        a.added.push(...pieces);
+      }
       this.redraw(pv);
     }
+    if (skipOverlay) return;
     this.drawOverlay(pv, ctx => {
       ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
       ctx.strokeStyle = 'rgba(120,120,120,.8)'; ctx.lineWidth = 1.5; ctx.stroke();
@@ -390,7 +436,7 @@ export class Editor {
     if (!this.selection) return false;
     const { pv, strokes } = this.selection;
     pv.data.strokes = pv.data.strokes.filter(s => !strokes.has(s));
-    this.pushHistory({ t: 'erase', pv, strokes: [...strokes] });
+    this.pushHistory({ t: 'replace', pv, removed: [...strokes], added: [] });
     this.selection = null;
     this.redraw(pv);
     return true;
@@ -670,6 +716,17 @@ export class Editor {
     return pv;
   }
 
+  clearPage() {
+    const pv = this.visiblePage();
+    if (!pv || !pv.data.strokes.length) return false;
+    const removed = pv.data.strokes;
+    pv.data.strokes = [];
+    this.clearSelection();
+    this.redraw(pv);
+    this.pushHistory({ t: 'replace', pv, removed, added: [] });
+    return true;
+  }
+
   setPaper(paper) {
     this.note.paper = paper;
     this.pages.forEach(pv => this.applyBackground(pv));
@@ -699,6 +756,10 @@ export class Editor {
     switch (a.t) {
       case 'add': isUndo ? remove(a.strokes) : add(a.strokes); break;
       case 'erase': isUndo ? add(a.strokes) : remove(a.strokes); break;
+      case 'replace':
+        if (isUndo) { remove(a.added); add(a.removed); }
+        else { pv.data.strokes = pv.data.strokes.filter(s => !a.removed.includes(s)); add(a.added); }
+        break;
       case 'move': translate(a.strokes, isUndo ? -a.dx : a.dx, isUndo ? -a.dy : a.dy); break;
       case 'recolor': a.strokes.forEach((s, i) => { s.color = isUndo ? a.from[i] : a.to; }); break;
       case 'addpage':
@@ -738,7 +799,67 @@ const mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2];
 const penWidth = (w, p) => w * (0.35 + 1.15 * p);
 
 function dot(ctx, p, w) {
-  ctx.beginPath(); ctx.arc(p[0], p[1], penWidth(w, p[2]) / 2, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(p[0], p[1], Math.max(0.3, w / 2), 0, Math.PI * 2); ctx.fill();
+}
+
+/** Strichbreite je nach Stiftart, Druck und (Kalligrafie) Schreibrichtung. */
+function widthAt(st, p, a, b) {
+  const w = st.width;
+  switch (st.kind) {
+    case 'ball': return w * (0.85 + 0.3 * p);                       // Kugelschreiber: fast gleichmäßig
+    case 'pencil': return w * (0.55 + 0.7 * p);                     // Bleistift: etwas Druck
+    case 'calli': {                                                 // Kalligrafie: schräge Feder (45°)
+      const ang = Math.atan2(b[1] - a[1], b[0] - a[0]);
+      const dir = (a[0] === b[0] && a[1] === b[1]) ? 0.6 : Math.abs(Math.sin(ang - Math.PI / 4));
+      return w * (0.18 + 1.25 * dir) * (0.6 + 0.6 * p);
+    }
+    default: return penWidth(w, p);                                 // Füller: stark druckabhängig
+  }
+}
+
+const pencilCache = new Map();
+/** Farbe setzen; der Bleistift bekommt eine körnige Textur. */
+function applyInk(ctx, st) {
+  if (st.kind !== 'pencil') { ctx.strokeStyle = ctx.fillStyle = st.color; return; }
+  let pat = pencilCache.get(st.color);
+  if (!pat) {
+    const c = document.createElement('canvas');
+    c.width = c.height = 48;
+    const g = c.getContext('2d');
+    const img = g.createImageData(48, 48);
+    const [r, gg, b] = hexToRgb(st.color);
+    let seed = 7;
+    const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    for (let i = 0; i < img.data.length; i += 4) {
+      img.data[i] = r; img.data[i + 1] = gg; img.data[i + 2] = b;
+      img.data[i + 3] = Math.round(255 * (0.35 + 0.6 * rnd() * rnd() + 0.2 * rnd()));
+    }
+    g.putImageData(img, 0, 0);
+    pat = ctx.createPattern(c, 'repeat');
+    pencilCache.set(st.color, pat);
+  }
+  ctx.strokeStyle = ctx.fillStyle = pat;
+}
+
+function hexToRgb(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
+  const n = m ? parseInt(m[1], 16) : 0x1d1d1f;
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+/** Teilt einen Strich: alles innerhalb des Radierkreises verschwindet, der Rest bleibt als neue Striche. */
+function splitStroke(st, x, y, r) {
+  const rr = r + st.width / 2;
+  const pieces = [];
+  let cur = [];
+  for (const p of st.points) {
+    if (Math.hypot(p[0] - x, p[1] - y) <= rr) {
+      if (cur.length > 1) pieces.push(cur);
+      cur = [];
+    } else cur.push(p);
+  }
+  if (cur.length > 1) pieces.push(cur);
+  return pieces.map(points => ({ ...st, points }));
 }
 
 export function drawStroke(ctx, st) {
@@ -762,14 +883,16 @@ export function drawStroke(ctx, st) {
     if (pts.length > 1) ctx.lineTo(pts[pts.length - 1][0], pts[pts.length - 1][1]);
     ctx.stroke();
   } else if (pts.length === 1) {
-    dot(ctx, pts[0], st.width);
+    applyInk(ctx, st);
+    dot(ctx, pts[0], widthAt(st, pts[0][2], pts[0], pts[0]));
   } else {
+    applyInk(ctx, st);
     let prev = pts[0];
     for (let i = 1; i < pts.length; i++) {
       const c = pts[i - 1];
       const end = i === pts.length - 1 ? pts[i] : mid(pts[i], pts[i - 1]);
       const start = i === 1 ? pts[0] : prev;
-      ctx.lineWidth = penWidth(st.width, pts[i][2]);
+      ctx.lineWidth = widthAt(st, pts[i][2], start, end);
       ctx.beginPath();
       ctx.moveTo(start[0], start[1]);
       if (i === 1) ctx.lineTo(end[0], end[1]);

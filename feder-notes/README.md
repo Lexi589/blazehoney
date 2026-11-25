@@ -1,6 +1,6 @@
 # Feder Notes
 
-Eine Notiz-App für dein Samsung-Tablet (Android-App) und deinen Windows-PC, gebaut als Alternative zu Samsung Notes. Die Notizen werden in deiner Nextcloud gespeichert, und die App funktioniert auch offline. Der Fokus liegt darauf, dass Stift **und** Tastatur ohne Umschalten zusammenarbeiten.
+Eine Notiz-App für dein Samsung-Tablet und Android-Handy, gebaut als Alternative zu Samsung Notes. Die Notizen werden in deiner Nextcloud gespeichert, und die App funktioniert auch offline. Der Fokus liegt darauf, dass Stift **und** Tastatur ohne Umschalten zusammenarbeiten.
 
 ## Was besser ist als in Samsung Notes
 
@@ -14,7 +14,7 @@ Eine Notiz-App für dein Samsung-Tablet (Android-App) und deinen Windows-PC, geb
 | **Schreib-Kurzbefehle** | `- ` erzeugt eine Liste, `1. ` eine Nummerierung, `# ` eine Überschrift und `[] ` eine Checkbox. Außerdem <kbd>Strg</kbd>+<kbd>B/I/U</kbd> und <kbd>Strg</kbd>+<kbd>Umschalt</kbd>+<kbd>H</kbd> zum Markieren. |
 | **Volltextsuche** | Durchsucht Titel, getippten Text **und den Text importierter PDFs** (z. B. Arbeitsblätter). |
 | **Speicherung in deiner Nextcloud** | Deine Notizen liegen als Dateien auf deinem eigenen Server und sind auf Tablet und PC synchron. Werden Änderungen auf zwei Geräten gleichzeitig gemacht, bleiben beide Versionen erhalten (als „Konflikt“-Kopie). |
-| **Echte Apps** | Android-App (`.apk`) für das Samsung-Tablet und ein Windows-Installer (`.exe`). |
+| **Android-App** | Installierbar als `.apk`, mit einem Layout für Tablet und Handy. (Die Windows-App ist im Code noch vorhanden, wird aber gerade nicht automatisch gebaut.) |
 | **Offline** | Alles wird lokal gespeichert. Die Synchronisation läuft, sobald wieder Netz da ist. |
 
 Alle Tastenkürzel zeigt die App mit <kbd>?</kbd> an.
@@ -34,30 +34,23 @@ Jede PDF wird zu einer eigenen Notiz. Jede PDF-Seite wird zu einer Seite, auf de
 Außerdem kannst du Bilder (Fotos von der Tafel), `.txt`/`.md`-Dateien und Feder-Backups (`.json`) importieren.
 Über **⋯ → PDF / Bild in diese Notiz einfügen** fügst du z. B. ein Arbeitsblatt in eine bestehende Notiz ein.
 
-## Installieren
+## Installieren (Samsung-Tablet / Android-Handy)
 
-Die Apps werden bei jedem Push automatisch von GitHub gebaut (siehe `.github/workflows/feder-apps.yml`).
-Die aktuelle Version liegt immer unter **Releases → „Feder Notes (aktuelle Version)“** im Repository:
-`https://github.com/Lexi589/blazehoney/releases/tag/feder-notes-latest`
+Die App wird bei jedem Push automatisch von GitHub gebaut. Die aktuelle Version liegt immer hier:
+**https://github.com/Lexi589/blazehoney/releases/download/feder-notes-latest/FederNotes.apk**
 
-### Samsung-Tablet / Android
-1. Öffne die Release-Seite auf dem Tablet und lade **`FederNotes.apk`** herunter.
-2. Öffne die Datei. Beim ersten Mal fragt Android, ob der Browser Apps installieren darf: **Einstellungen → Zulassen**.
-3. Tippe auf **Installieren**. Für Updates installierst du einfach die neue APK darüber; deine Notizen bleiben erhalten.
+1. Den Link auf dem Gerät öffnen und die APK herunterladen.
+2. Die Datei öffnen. Beim ersten Mal fragt Android, ob der Browser Apps installieren darf: **Zulassen**.
+3. **Installieren** antippen. Updates installierst du einfach darüber, die Notizen bleiben erhalten.
 
-### Windows
-1. Lade **`FederNotes-Setup.exe`** herunter und starte die Datei.
-2. Falls Windows SmartScreen warnt: **Weitere Informationen → Trotzdem ausführen**. Die Warnung kommt, weil die App kein gekauftes Zertifikat hat.
-3. Danach findest du Feder Notes im Startmenü und auf dem Desktop.
+## Mit Nextcloud verbinden (einmal pro Gerät, ca. 20 Sekunden)
 
-## Speichern auf deiner Nextcloud
+1. In der Übersicht auf **„Mit Nextcloud verbinden“** tippen (oder auf ⚙ oben rechts).
+2. Die **Adresse** deiner Nextcloud eingeben, z. B. `cloud.meinserver.de`, und **Anmelden** antippen.
+3. Der Browser öffnet sich: dort anmelden (falls nötig) und **Zugriff gewähren** tippen.
+4. Zurück in die App wechseln. Sie ist jetzt verbunden und synchronisiert automatisch.
 
-1. Erstelle in Nextcloud ein **App-Passwort**: Profilbild → *Persönliche Einstellungen* → *Sicherheit* → unten bei „App-Name“ `Feder Notes` eintragen → **Neues App-Passwort erstellen**.
-2. Öffne in Feder Notes **⚙** und wähle **Nextcloud**. Trage Folgendes ein:
-   - **Adresse:** z. B. `https://cloud.meinserver.de`. Du kannst auch einfach die Adresse aus dem Browser einfügen; Teile wie `/index.php/apps/files` werden automatisch entfernt.
-   - **Benutzername** und das **App-Passwort**
-   - **Ordner:** Standard ist `FederNotes`
-3. Wähle **Verbindung testen** und dann **Speichern**. Mach das auf jedem Gerät, danach sind alle synchron.
+Du musst kein App-Passwort abtippen; die App bekommt automatisch ein eigenes. Unter Nextcloud → Einstellungen → Sicherheit siehst du es als „Feder Notes (Android)“ und kannst es dort jederzeit widerrufen.
 
 In deiner Nextcloud entsteht der Ordner `FederNotes` mit diesen Dateien:
 
@@ -67,12 +60,15 @@ In deiner Nextcloud entsteht der Ordner `FederNotes` mit diesen Dateien:
 | `note-….json` | je eine Notiz |
 | `asset-….b64` | Bilder und PDF-Seiten |
 
-Damit liegt auch das Backup automatisch auf deinem Server.
+Wird dieselbe Notiz auf zwei Geräten gleichzeitig geändert, bleiben beide Versionen erhalten.
 
-- Synchronisiert wird jede Minute, beim Schließen der App und mit <kbd>Strg</kbd>+<kbd>S</kbd> bzw. ⟳. Offline geschriebene Notizen werden nachgeladen, sobald wieder Netz da ist.
-- Wird dieselbe Notiz auf zwei Geräten gleichzeitig geändert, bleiben beide Versionen erhalten (eine davon als „(Konflikt)“).
-- Richte die Nextcloud am besten **zuerst in der Windows-App** ein: Sie legt den Ordner automatisch an. Die Android-App kann das technisch nicht. Alternativ legst du den Ordner `FederNotes` einfach selbst in Nextcloud an.
-- Im normalen Browser blockiert Nextcloud den Zugriff (CORS). Benutze für Nextcloud deshalb die Apps.
+## Stift wie bei Samsung Notes
+
+- **Stiftarten:** Tippe auf den aktiven Stift, um zwischen **Füller**, **Kuli**, **Bleistift** (mit Körnung) und **Kalligrafie** (schräge Feder) zu wählen. Jede Stiftart merkt sich ihre eigene Farbe und Stärke. Eine Vorschau zeigt, wie der Strich aussieht.
+- **Farben:** Tippe auf eine Farbe, um sie zu verwenden. Tippst du auf die **aktive** Farbe noch einmal, kannst du dieses Farbfeld ändern; die neue Farbe bleibt dauerhaft gespeichert.
+- **Radierer:** Tippe auf den aktiven Radierer und wähle **Ganzer Strich** oder **Nur Stelle**. Dort findest du auch Größe und „Seite leeren“. Mit gedrückter **S-Pen-Taste** radierst du jederzeit.
+- **Finger:** Ein Finger scrollt, zwei Finger zoomen. Ist unter ⋯ „Mit dem Finger zeichnen“ an, zeichnet ein Finger, und mit zwei Fingern scrollst und zoomst du.
+- Die **Zurück-Taste** von Android führt vom Editor zur Übersicht.
 
 ## Für Entwickler
 
@@ -80,7 +76,7 @@ Damit liegt auch das Backup automatisch auf deinem Server.
 cd feder-notes
 npm install
 npm start               # Windows-/Desktop-App im Entwicklungsmodus
-npm run build:win       # Windows-Installer nach dist/
+npm run build:win       # Windows-Installer nach dist/ (wird derzeit nicht automatisch gebaut)
 npm run android:prepare # Android-Projekt erzeugen (danach: cd android && ./gradlew assembleDebug)
 ```
 
@@ -101,7 +97,8 @@ feder-notes/
   js/sync.js                Synchronisation mit Konfliktbehandlung
   js/nextcloud.js           Speicherung in Nextcloud (WebDAV, App-Passwort, ETags)
   js/transport.js           HTTP über Electron/Android nativ (umgeht Browser-Sperren)
-  desktop/                  Windows-App (Electron)
+  desktop/                  Windows-App (Electron, derzeit pausiert)
+  native/android/           natives Android-Modul (OkHttp für WebDAV, Zurück-Taste)
   capacitor.config.json     Android-App (Capacitor)
   scripts/                  Build-Hilfen (Web-Kopie, Android-Anpassungen)
   js/db.js                  lokale Speicherung (IndexedDB)
