@@ -70,6 +70,26 @@ Wird dieselbe Notiz auf zwei Geräten gleichzeitig geändert, bleiben beide Vers
 - **Finger:** Ein Finger scrollt, zwei Finger zoomen. Ist unter ⋯ „Mit dem Finger zeichnen“ an, zeichnet ein Finger, und mit zwei Fingern scrollst und zoomst du.
 - Die **Zurück-Taste** von Android führt vom Editor zur Übersicht.
 
+## Text schreiben (wie in Word, aber auf den Linien)
+
+- **Textfeld anlegen:** Wähle das **T**-Werkzeug und tippe auf die Seite, oder fang mit einer Tastatur einfach an zu tippen. Das Feld rastet auf der Linie ein und reicht bis zum rechten Seitenrand.
+- **Auf den Linien:** Jede Zeile sitzt auf einer Papierlinie, egal welche Schrift und Größe du nimmst. Bei „2 Zeilen“ Abstand schreibst du auf jeder zweiten Linie.
+- **Formatleiste:** Sie erscheint, sobald du in einem Textfeld bist:
+  - Schriftart (Standard, Serif, Schreibmaschine, Handschrift) und Größe
+  - **F**ett, *K*ursiv, U̲nterstrichen, Durchgestrichen
+  - Textfarbe und Markieren
+  - linksbündig, zentriert, rechtsbündig
+  - Aufzählung, Nummerierung, Checkbox
+  - Zeilenabstand und „Formatierung entfernen“
+- **Notiz-Einstellungen** (⋯ → Notiz-Einstellungen): Papier, Schriftart, Größe, Zeilenabstand und Textfarbe für die ganze Notiz, mit Vorschau. Mit „Als Standard für neue Notizen“ werden sie für alle neuen Notizen übernommen.
+- **Allgemeine Einstellungen** (⚙ in der Übersicht oder ⋯ in der Notiz):
+  - Nextcloud
+  - Standard für neue Notizen
+  - Mit dem Finger zeichnen
+  - Einfach lostippen an/aus
+  - Automatisch synchronisieren
+  - Hell/Dunkel/System
+
 ## Für Entwickler
 
 ```bash

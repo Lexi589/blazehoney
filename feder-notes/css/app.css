@@ -153,15 +153,47 @@ body.drawer-open #drawer { transform: none; }
 .swatch { width: 32px; height: 32px; border-radius: 50%; border: 0; padding: 0; cursor: pointer; position: relative; flex: none; box-shadow: inset 0 0 0 1px rgba(0,0,0,.12); }
 .swatch.active::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 2.5px solid var(--accent); }
 
+/* ---------- Word-ähnliche Formatleiste ---------- */
+#formatbar {
+  display: flex; align-items: center; gap: 4px; margin: -2px 12px 8px; padding: 5px 8px; background: var(--surface);
+  border-radius: 999px; box-shadow: var(--shadow); overflow-x: auto; scrollbar-width: none; flex: none; align-self: center; max-width: calc(100% - 24px);
+}
+#formatbar::-webkit-scrollbar { display: none; }
+.fmt { width: 38px; height: 38px; border: 0; background: transparent; border-radius: 12px; cursor: pointer; display: grid; place-items: center; flex: none; font-size: 17px; color: var(--text); position: relative; }
+.fmt svg { width: 21px; height: 21px; }
+.fmt:hover { background: var(--surface-2); }
+.fmt.on { background: var(--accent-soft); color: var(--accent); }
+.fmt.color span { font-weight: 700; margin-top: -6px; }
+.fmt.color i { position: absolute; left: 10px; right: 10px; bottom: 8px; height: 4px; border-radius: 2px; background: #e03131; }
+.fmt-select { border: 0; background: var(--surface-2); border-radius: 999px; padding: 8px 10px; flex: none; max-width: 150px; cursor: pointer; }
+.fmt-select.narrow { max-width: 96px; }
+
+/* ---------- Einstellungen ---------- */
+h3.sec { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--accent); margin: 22px 2px 6px; }
+.set-row { display: flex !important; flex-direction: row !important; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 2px; margin: 0 !important; font-size: 15px; color: var(--text) !important; border-bottom: 1px solid var(--border); }
+.set-row select { border: 0; background: var(--surface-2); border-radius: 12px; padding: 8px 12px; max-width: 180px; }
+.mini-palette { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.mini-palette .swatch { width: 26px; height: 26px; }
+.paper-pick { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 6px 0 4px; }
+.paper-pick button { border: 2px solid var(--border); background: var(--surface); border-radius: 14px; padding: 6px 6px 8px; cursor: pointer; font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
+.paper-pick .pv { height: 62px; border-radius: 8px; background-color: var(--paper); background-size: 12px 12px !important; box-shadow: inset 0 0 0 1px var(--border); }
+.paper-pick .pv.paper-lined { background-image: repeating-linear-gradient(transparent 0 11px, var(--line) 11px 12px); background-position: 0 0; }
+.paper-pick .pv.paper-grid { background-image: repeating-linear-gradient(transparent 0 11px, var(--line) 11px 12px), repeating-linear-gradient(90deg, transparent 0 11px, var(--line) 11px 12px); }
+.paper-pick .pv.paper-dots { background-image: radial-gradient(circle at 6px 6px, #b7c3d4 1.2px, transparent 1.6px); }
+.paper-pick button.active { border-color: var(--accent); color: var(--accent); font-weight: 650; }
+.sample { margin: 14px 0 4px; height: 80px; border-radius: 14px; position: relative; overflow: hidden; background-color: var(--paper); box-shadow: inset 0 0 0 1px var(--border); }
+.sample span { position: absolute; left: 16px; top: 40px; white-space: nowrap; }
+
 #trash-bar { background: var(--accent-soft); margin: 0 12px 8px; border-radius: 16px; padding: 10px 14px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 
 /* ---------- Seiten ---------- */
 #pages {
   flex: 1; overflow: auto; padding: 8px 12px calc(120px + env(safe-area-inset-bottom)); outline: none;
-  display: flex; flex-direction: column; align-items: center; gap: 18px;
-  touch-action: none; overscroll-behavior: contain;
+  touch-action: pan-x pan-y; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
 }
 #pages:empty { display: none; }
+.pages-inner { display: flex; flex-direction: column; align-items: center; gap: 18px; min-width: 100%; width: max-content; margin: 0 auto; }
+.page { contain: layout paint; }
 .page { position: relative; flex: none; background: var(--paper); box-shadow: var(--shadow); border-radius: 6px; overflow: hidden; user-select: none; -webkit-user-select: none; }
 .page canvas { position: absolute; left: 0; top: 0; pointer-events: none; }
 .sheet { position: absolute; left: 0; top: 0; width: 1000px; transform-origin: 0 0; }
@@ -175,16 +207,15 @@ body.drawer-open #drawer { transform: none; }
 
 .tb { position: absolute; pointer-events: auto; min-width: 60px; }
 .tb-body {
-  font: 24px/40px "SamsungOne", "Roboto", system-ui, sans-serif; color: #1d1d1f;
+  font: 24px/40px "SamsungOne", "Roboto", system-ui, sans-serif; color: #1d1d1f; position: relative;
   min-height: 40px; padding: 0 6px; outline: none; border-radius: 6px;
   resize: horizontal; overflow: hidden; max-width: 960px; white-space: pre-wrap; overflow-wrap: anywhere;
   user-select: text; -webkit-user-select: text; cursor: text;
 }
-.tb-body:focus { box-shadow: 0 0 0 2px rgba(242,106,27,.45); background: rgba(255,255,255,.6); }
+.tb-body:focus { box-shadow: 0 0 0 2px rgba(242,106,27,.45); }
 .tb-body:empty::before { content: "Text…"; color: #b5b0a6; }
 .tb-body p, .tb-body ul, .tb-body ol, .tb-body h1, .tb-body h2, .tb-body h3 { margin: 0; }
-.tb-body h1 { font-size: 36px; line-height: 80px; }
-.tb-body h2 { font-size: 30px; line-height: 40px; }
+.tb-body h1, .tb-body h2, .tb-body h3 { font-size: 1.25em; font-weight: 700; line-height: inherit; }
 .tb-body ul, .tb-body ol { padding-left: 34px; }
 .tb-body mark { background: #ffec80; color: inherit; }
 .tb-body .cb { display: inline-block; width: 22px; height: 22px; border: 2px solid #555; border-radius: 6px; vertical-align: -3px; margin-right: 8px; cursor: pointer; text-align: center; line-height: 17px; font-size: 18px; }
@@ -263,19 +294,18 @@ dialog hr { border: 0; border-top: 1px solid var(--border); margin: 14px 0; }
 #toast.show { opacity: 1; transform: translateX(-50%); }
 #drop-overlay { position: fixed; inset: 0; background: rgba(242,106,27,.15); border: 4px dashed var(--accent); z-index: 90; display: grid; place-items: center; font-size: 22px; font-weight: 700; color: var(--accent); pointer-events: none; }
 
-/* ---------- Tablet: Liste einklappbar ---------- */
-body.home-collapsed #home { display: none; }
+/* ---------- Eine Ansicht nach der anderen (Übersicht ODER Notiz) ---------- */
+#home { width: 100%; border-right: 0; }
+body.view-home #editor { display: none; }
+body.view-editor #home { display: none; }
+#note-grid { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 18px; padding-left: 22px; padding-right: 22px; }
+.home-head { max-width: 1400px; }
 
-/* ---------- Handy: eine Ansicht nach der anderen ---------- */
 @media (max-width: 820px) {
-  #home { width: 100%; border-right: 0; }
-  body.view-home #editor { display: none; }
-  body.view-editor #home { display: none; }
-  body.home-collapsed #home { display: flex; }
-  body.view-editor.home-collapsed #home { display: none; }
-  #note-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+  #note-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; padding-left: 16px; padding-right: 16px; }
   .home-head h1 { font-size: 34px; padding-top: 18px; }
   #toolbar { margin: 4px 8px 6px; max-width: calc(100% - 16px); align-self: stretch; }
+  #formatbar { margin: -2px 8px 6px; max-width: calc(100% - 16px); align-self: stretch; }
   .tool { width: 42px; }
   .swatch { width: 28px; height: 28px; }
   #pages { padding-left: 6px; padding-right: 6px; gap: 12px; }
@@ -293,9 +323,10 @@ body.home-collapsed #home { display: none; }
 @media print {
   @page { size: A4; margin: 0; }
   html, body { height: auto; overflow: visible; background: #fff; }
-  #home, .edit-bar, #toolbar, #trash-bar, #toast, .add-page, .page-num, #empty-state, #zoom-chip, #drawer, #popover { display: none !important; }
+  #home, .edit-bar, #toolbar, #formatbar, #trash-bar, #toast, .add-page, .page-num, #empty-state, #zoom-chip, #drawer, #popover { display: none !important; }
   #app, #editor { display: block; }
   #pages { display: block; overflow: visible; padding: 0; }
+  .pages-inner { display: block; transform: none !important; }
   .page { box-shadow: none; border-radius: 0; margin: 0 auto; break-after: page; }
   .tb-grip { display: none; }
   .tb-body:empty::before { content: none; }

@@ -5,7 +5,16 @@ import { sanitizeHTML } from './sanitize.js';
 export const PAGE_W = 1000;            // logische Seitenbreite
 export const A4_H = Math.round(PAGE_W * 297 / 210);
 const LINE = 40;                        // Linienabstand = Textzeilenhöhe
-const MAX_CANVAS_PX = 16e6;             // Speicherschutz für sehr große Zoomstufen
+const MAX_CANVAS_PX = 12e6;             // Speicherschutz für sehr große Zoomstufen
+
+// Schriften für Textfelder (alle auf Android/Windows vorhanden, funktionieren offline)
+export const FONTS = {
+  sans: '"Roboto", "SamsungOne", system-ui, "Segoe UI", sans-serif',
+  serif: '"Noto Serif", "Droid Serif", Georgia, "Times New Roman", serif',
+  mono: '"Roboto Mono", "Droid Sans Mono", Consolas, "Courier New", monospace',
+  hand: '"Dancing Script", "Segoe Script", "Comic Sans MS", cursive',
+};
+export const DEFAULT_TEXT = { font: 'sans', size: 24, color: '#1d1d1f', spacing: 1 };
 
 export function newPage() {
   return { id: uid(), h: A4_H, bg: null, strokes: [], texts: [] };
@@ -45,8 +54,19 @@ export class Editor {
     container.addEventListener('pointercancel', e => this.onUp(e, true));
     container.addEventListener('contextmenu', e => { if (e.target.closest('.page')) e.preventDefault(); });
     container.addEventListener('wheel', e => {
-      if (e.ctrlKey) { e.preventDefault(); this.setZoom(this.zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1)); }
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      const r = container.getBoundingClientRect();
+      const z = (this.preview ? this.preview.z : this.zoom) * (e.deltaY < 0 ? 1.1 : 1 / 1.1);
+      this.previewZoom(z, { x: e.clientX - r.left, y: e.clientY - r.top });
+      clearTimeout(this._wheelT);
+      this._wheelT = setTimeout(() => this.commitPreview(), 220);
     }, { passive: false });
+    // Finger scrollen nativ (flüssig, mit Schwung). Stift, Handballen und Finger-Zeichnen blockieren das.
+    container.addEventListener('touchstart', e => this.onTouchStart(e), { passive: false });
+    container.addEventListener('touchmove', e => this.onTouchMove(e), { passive: false });
+    container.addEventListener('touchend', e => this.onTouchEnd(e));
+    container.addEventListener('touchcancel', e => this.onTouchEnd(e));
     new ResizeObserver(() => this.relayout()).observe(container);
   }
 
@@ -61,8 +81,15 @@ export class Editor {
     this.undoStack = []; this.redoStack = [];
     this.selection = null; this.lastPointer = null;
     this.container.innerHTML = '';
+    this.inner = document.createElement('div');
+    this.inner.className = 'pages-inner';
+    this.container.appendChild(this.inner);
     this.pages = [];
     this.addBtn = null;
+    this.preview = null;
+    if (this.io) this.io.disconnect();
+    // Nur Seiten in der Nähe des Bildschirms bekommen Zeichenflächen (spart viel Speicher → flüssiger)
+    this.io = new IntersectionObserver(en => this.onVisibility(en), { root: this.container, rootMargin: '1200px 0px' });
     if (!note) return;
     if (!note.pages.length) note.pages.push(newPage());
     note.pages.forEach(p => this.buildPage(p));
@@ -76,7 +103,7 @@ export class Editor {
     const b = document.createElement('button');
     b.className = 'add-page'; b.textContent = '+ Neue Seite';
     b.addEventListener('click', () => this.addPage());
-    this.container.appendChild(b);
+    this.inner.appendChild(b);
     this.addBtn = b;
   }
 
@@ -93,13 +120,14 @@ export class Editor {
     num.className = 'page-num';
     el.append(bgSheet, ink, live, textSheet, num);
 
-    const pv = { data, el, bgSheet, ink, live, textSheet, num, k: 1, s: 1 };
+    const pv = { data, el, bgSheet, ink, live, textSheet, num, k: 1, s: 1, visible: false, drawnK: 0, liveOn: false };
     el._pv = pv;
     this.applyBackground(pv);
     data.texts.forEach(t => this.buildTextBox(pv, t));
 
     const before = this.pages[index] ? this.pages[index].el : this.addBtn || null;
-    this.container.insertBefore(el, before);
+    this.inner.insertBefore(el, before);
+    this.io.observe(el);
     this.pages.splice(index, 0, pv);
     this.pages.forEach((p, i) => { p.num.textContent = `${i + 1} / ${this.pages.length}`; });
     return pv;
@@ -113,6 +141,7 @@ export class Editor {
       const img = document.createElement('img');
       img.alt = '';
       img.draggable = false;
+      img.decoding = 'async';
       this.opts.getAssetURL(pv.data.bg.asset).then(url => { if (url) img.src = url; });
       sheet.appendChild(img);
     } else {
@@ -122,70 +151,164 @@ export class Editor {
 
   relayout() {
     if (!this.note) return;
-    const avail = Math.max(200, this.container.clientWidth - 32);
+    const avail = Math.max(200, this.container.clientWidth - 24);
     const baseW = Math.min(avail, 900);
     const dispW = Math.round(baseW * this.zoom);
     const s = dispW / PAGE_W;
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
     for (const pv of this.pages) {
       const h = pv.data.h;
       let k = s * dpr;
       if (PAGE_W * k * h * k > MAX_CANVAS_PX) k = Math.sqrt(MAX_CANVAS_PX / (PAGE_W * h));
       pv.s = s; pv.k = k;
-      pv.el.style.width = dispW + 'px';
-      pv.el.style.height = Math.round(h * s) + 'px';
+      const cw = dispW + 'px', ch = Math.round(h * s) + 'px';
+      pv.el.style.width = cw;
+      pv.el.style.height = ch;
       for (const sh of [pv.bgSheet, pv.textSheet]) {
         sh.style.height = h + 'px';
         sh.style.transform = `scale(${s})`;
       }
-      for (const c of [pv.ink, pv.live]) {
-        c.width = Math.round(PAGE_W * k);
-        c.height = Math.round(h * k);
-        c.style.width = dispW + 'px';
-        c.style.height = Math.round(h * s) + 'px';
-      }
-      this.redraw(pv);
+      for (const c of [pv.ink, pv.live]) { c.style.width = cw; c.style.height = ch; }
+      pv.drawnK = 0;
+      if (pv.visible) this.redraw(pv); else this.release(pv);
     }
   }
 
+  sizeCanvas(c, pv) {
+    const w = Math.round(PAGE_W * pv.k), h = Math.round(pv.data.h * pv.k);
+    if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+  }
+
+  release(pv) {
+    for (const c of [pv.ink, pv.live]) if (c.width) { c.width = 0; c.height = 0; }
+    pv.drawnK = 0; pv.liveOn = false;
+  }
+
+  onVisibility(entries) {
+    for (const en of entries) {
+      const pv = en.target._pv;
+      if (!pv || !this.pages.includes(pv)) continue;
+      pv.visible = en.isIntersecting;
+      if (pv.visible) { if (pv.drawnK !== pv.k) this.redraw(pv); }
+      else if (!(this.active && this.active.pv === pv) && !(this.selection && this.selection.pv === pv)) this.release(pv);
+    }
+  }
+
+  /** Endgültiger Zoom (zeichnet neu). anchor = Punkt im sichtbaren Bereich, der stehen bleibt. */
   setZoom(z, anchor) {
     z = Math.min(4, Math.max(0.4, z));
+    if (this.preview) { this.preview = null; this.inner.style.transform = ''; this.inner.style.willChange = ''; }
     if (Math.abs(z - this.zoom) < 0.001) return;
     const c = this.container;
     const ax = anchor ? anchor.x : c.clientWidth / 2;
     const ay = anchor ? anchor.y : c.clientHeight / 2;
-    const rx = (c.scrollLeft + ax) / Math.max(1, c.scrollWidth);
-    const ry = (c.scrollTop + ay) / Math.max(1, c.scrollHeight);
+    const f = z / this.zoom;
+    const px = c.scrollLeft + ax, py = c.scrollTop + ay;
     this.zoom = z;
     this.relayout();
-    c.scrollLeft = rx * c.scrollWidth - ax;
-    c.scrollTop = ry * c.scrollHeight - ay;
+    c.scrollLeft = px * f - ax;
+    c.scrollTop = py * f - ay;
     this.opts.onZoom && this.opts.onZoom(z);
+  }
+
+  /** Zoom-Vorschau während der Geste: nur skalieren (GPU), nichts neu zeichnen → flüssig. */
+  previewZoom(z, anchor) {
+    if (!this.inner) return;
+    z = Math.min(4, Math.max(0.4, z));
+    if (!this.preview) {
+      const c = this.container;
+      const a = anchor || { x: c.clientWidth / 2, y: c.clientHeight / 2 };
+      const ir = this.inner.getBoundingClientRect(), cr = c.getBoundingClientRect();
+      this.preview = { anchor: a, z };
+      this.inner.style.transformOrigin = `${cr.left + a.x - ir.left}px ${cr.top + a.y - ir.top}px`;
+      this.inner.style.willChange = 'transform';
+    }
+    this.preview.z = z;
+    this.inner.style.transform = `scale(${z / this.zoom})`;
+    this.opts.onZoomPreview && this.opts.onZoomPreview(z);
+  }
+
+  commitPreview() {
+    const p = this.preview;
+    if (!p) return;
+    this.setZoom(p.z, p.anchor);
+    if (this.preview) { this.preview = null; this.inner.style.transform = ''; this.inner.style.willChange = ''; }
+  }
+
+  /* ---------------- Touch: natives Scrollen, eigenes Pinch-Zoom ---------------- */
+
+  onTouchStart(e) {
+    const penBusy = Date.now() < this.penActiveUntil || (this.active && this.active.type === 'pen');
+    const inText = e.target.closest && e.target.closest('.tb-body');
+    if (penBusy || (this.fingerDraws && !inText)) { if (e.cancelable) e.preventDefault(); return; }
+    if (this.fingerDraws) return;
+    if (e.touches.length >= 2) {
+      if (e.cancelable) e.preventDefault();
+      const [a, b] = e.touches;
+      const r = this.container.getBoundingClientRect();
+      const cx = (a.clientX + b.clientX) / 2, cy = (a.clientY + b.clientY) / 2;
+      this.pinch = { dist: Math.max(10, Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY)), zoom: this.zoom, cx, cy };
+      this.previewZoom(this.zoom, { x: cx - r.left, y: cy - r.top });
+    }
+  }
+
+  onTouchMove(e) {
+    if (Date.now() < this.penActiveUntil) { if (e.cancelable) e.preventDefault(); return; }
+    const p = this.pinch;
+    if (!p || e.touches.length < 2) return;
+    if (e.cancelable) e.preventDefault();
+    const [a, b] = e.touches;
+    const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    const cx = (a.clientX + b.clientX) / 2, cy = (a.clientY + b.clientY) / 2;
+    this.previewZoom(p.zoom * d / p.dist);
+    this.container.scrollLeft -= cx - p.cx;
+    this.container.scrollTop -= cy - p.cy;
+    p.cx = cx; p.cy = cy;
+  }
+
+  onTouchEnd(e) {
+    if (this.pinch && e.touches.length < 2) { this.pinch = null; this.commitPreview(); }
   }
 
   /* ---------------- Zeichnen ---------------- */
 
   ctx(pv, which = 'ink') {
-    const ctx = pv[which].getContext('2d');
+    const c = pv[which];
+    // Live-Ebene mit "desynchronized": geringere Verzögerung zwischen Stiftspitze und Strich
+    const ctx = c._ctx || (c._ctx = c.getContext('2d', which === 'live' ? { desynchronized: true } : undefined));
     ctx.setTransform(pv.k, 0, 0, pv.k, 0, 0);
     return ctx;
   }
 
+  liveCtx(pv) {
+    this.sizeCanvas(pv.live, pv);
+    pv.liveOn = true;
+    return this.ctx(pv, 'live');
+  }
+
   redraw(pv) {
+    if (!pv.visible) { pv.drawnK = 0; return; }
+    this.sizeCanvas(pv.ink, pv);
     const ctx = this.ctx(pv);
     ctx.clearRect(0, 0, PAGE_W, pv.data.h);
     for (const st of pv.data.strokes) drawStroke(ctx, st);
+    pv.drawnK = pv.k;
     this.drawOverlay(pv);
   }
 
   drawOverlay(pv, extra) {
-    const ctx = this.ctx(pv, 'live');
+    const sel = this.selection && this.selection.pv === pv;
+    if (!extra && !sel) {
+      if (pv.liveOn) this.ctx(pv, 'live').clearRect(0, 0, PAGE_W, pv.data.h);
+      return;
+    }
+    const ctx = this.liveCtx(pv);
     ctx.clearRect(0, 0, PAGE_W, pv.data.h);
-    if (this.selection && this.selection.pv === pv) {
+    if (sel) {
       const b = this.selection.box;
       ctx.save();
       ctx.setLineDash([8, 6]);
-      ctx.strokeStyle = '#e8590c';
+      ctx.strokeStyle = '#f26a1b';
       ctx.lineWidth = 2;
       ctx.strokeRect(b.x - 8, b.y - 8, b.w + 16, b.h + 16);
       ctx.restore();
@@ -235,12 +358,12 @@ export class Editor {
     }
     if (e.pointerType === 'touch' && (!this.fingerDraws || this.touches.size)) {
       this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, target: e.target, t: Date.now() });
-      capture(this.container, e.pointerId);
-      this.startGesture();
+      if (this.fingerDraws) { capture(this.container, e.pointerId); this.startGesture(); }
       return;
     }
     if (!pageEl) return;
     const pv = pageEl._pv;
+    if (!pv.visible) { pv.visible = true; this.redraw(pv); }
     const [x, y] = this.pos(pv, e);
     const inText = e.target.closest('.tb');
 
@@ -292,7 +415,7 @@ export class Editor {
     if (this.touches.has(e.pointerId)) {
       const t = this.touches.get(e.pointerId);
       t.x = e.clientX; t.y = e.clientY;
-      this.updateGesture();
+      if (this.gesture) this.updateGesture();
       return;
     }
     if (this.textDrag && this.textDrag.id === e.pointerId) { this.moveTextDrag(e); return; }
@@ -361,7 +484,7 @@ export class Editor {
   }
 
   drawLiveSegment(pv, st) {
-    const ctx = this.ctx(pv, 'live');
+    const ctx = this.liveCtx(pv);
     const pts = st.points;
     const n = pts.length;
     applyInk(ctx, st);
@@ -463,9 +586,10 @@ export class Editor {
       const [a, b] = pts;
       const r = c.getBoundingClientRect();
       this.gesture = {
-        kind: 'pinch', dist: Math.hypot(a.x - b.x, a.y - b.y), zoom: this.zoom,
-        cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, anchor: { x: (a.x + b.x) / 2 - r.left, y: (a.y + b.y) / 2 - r.top },
+        kind: 'pinch', dist: Math.max(10, Math.hypot(a.x - b.x, a.y - b.y)), zoom: this.preview ? this.preview.z : this.zoom,
+        cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2,
       };
+      this.previewZoom(this.gesture.zoom, { x: this.gesture.cx - r.left, y: this.gesture.cy - r.top });
     }
   }
 
@@ -480,25 +604,20 @@ export class Editor {
     } else if (g.kind === 'pinch' && pts.length >= 2) {
       const [a, b] = pts;
       const d = Math.hypot(a.x - b.x, a.y - b.y);
-      const target = g.zoom * d / g.dist;
-      if (!this._pinchRaf) {
-        this._pinchRaf = requestAnimationFrame(() => {
-          this._pinchRaf = null;
-          this.setZoom(target, g.anchor);
-          const cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2;
-          c.scrollLeft -= cx - g.cx; c.scrollTop -= cy - g.cy;
-          g.cx = cx; g.cy = cy;
-        });
-      }
+      this.previewZoom(g.zoom * d / g.dist);
+      const cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2;
+      c.scrollLeft -= cx - g.cx; c.scrollTop -= cy - g.cy;
+      g.cx = cx; g.cy = cy;
     }
   }
 
   endTouch(e, cancelled) {
     const t = this.touches.get(e.pointerId);
     this.touches.delete(e.pointerId);
-    const wasPan = this.gesture && this.gesture.kind === 'pan';
+    const wasTap = !this.gesture || this.gesture.kind === 'pan';
+    if (this.gesture && this.gesture.kind === 'pinch' && this.touches.size < 2) this.commitPreview();
     // Kurzes Antippen = "Klick": Textfeld fokussieren / Stelle für Tastatureingabe merken
-    if (!cancelled && wasPan && this.touches.size === 0 && Date.now() - t.t < 350 && Math.hypot(t.x - t.sx, t.y - t.sy) < 10) {
+    if (t && !cancelled && wasTap && this.touches.size === 0 && Date.now() - t.t < 350 && Math.hypot(t.x - t.sx, t.y - t.sy) < 10) {
       this.handleTap(t.target, e);
     }
     this.gesture = null;
@@ -524,7 +643,42 @@ export class Editor {
 
   /* ---------------- Textfelder ---------------- */
 
+  textStyleOf(t) {
+    return { ...DEFAULT_TEXT, ...((this.note && this.note.textStyle) || {}), ...(t.style || {}) };
+  }
+
+  /** Schrift, Größe, Farbe, Zeilenabstand anwenden und Grundlinie exakt auf die Papierlinie legen. */
+  styleBox(wrap) {
+    const t = wrap._t, body = wrap._body;
+    const st = this.textStyleOf(t);
+    const lh = LINE * (st.spacing || 1);
+    body.style.fontFamily = FONTS[st.font] || FONTS.sans;
+    body.style.fontSize = st.size + 'px';
+    body.style.lineHeight = lh + 'px';
+    body.style.minHeight = lh + 'px';
+    body.style.color = st.color;
+    body.style.top = baselineShift(st.font, st.size, lh) + 'px';
+    wrap.style.left = t.x + 'px';
+    wrap.style.top = t.y + 'px';
+    const w = t.w || Math.max(120, PAGE_W - t.x - 40);   // Standard: bis zum rechten Seitenrand
+    body._autoW = t.w ? null : w;
+    body.style.width = w + 'px';
+  }
+
+  restyleText() {
+    for (const pv of this.pages) for (const wrap of pv.textSheet.querySelectorAll('.tb')) this.styleBox(wrap);
+  }
+
+  /** Textfeld, das gerade bearbeitet wird (oder zuletzt bearbeitet wurde). */
+  get focusedBox() {
+    const el = document.activeElement;
+    const wrap = el && el.closest && el.closest('#pages .tb');
+    if (wrap) this._lastBox = wrap;
+    return wrap || null;
+  }
+
   buildTextBox(pv, t) {
+    t.y = Math.max(0, Math.round(t.y / LINE) * LINE);   // ältere Notizen an die Linien anpassen
     const wrap = document.createElement('div');
     wrap.className = 'tb';
     wrap.style.left = t.x + 'px';
@@ -537,11 +691,13 @@ export class Editor {
     body.className = 'tb-body';
     body.contentEditable = this.readOnly ? 'false' : 'true';
     body.spellcheck = true;
-    if (t.w) body.style.width = t.w + 'px';
     body.innerHTML = sanitizeHTML(t.html);
     body.querySelectorAll('.cb').forEach(cb => cb.setAttribute('contenteditable', 'false'));
     wrap.append(grip, body);
-    wrap._t = t; wrap._pv = pv;
+    wrap._t = t; wrap._pv = pv; wrap._body = body;
+    this.styleBox(wrap);
+    body.addEventListener('focus', () => { this._lastBox = wrap; this.opts.onTextFocus && this.opts.onTextFocus(wrap); });
+    body.addEventListener('blur', () => { this.opts.onTextBlur && this.opts.onTextBlur(wrap); });
 
     body.addEventListener('input', () => this.onTextInput(body, t));
     body.addEventListener('keydown', e => this.onTextKey(e, body, pv, t));
@@ -556,7 +712,8 @@ export class Editor {
     });
     new MutationObserver(() => {
       const w = parseFloat(body.style.width) || null;
-      if (w !== t.w) { t.w = w; this.changed(); }
+      if (w === body._autoW) return;          // automatische Breite, nicht vom Nutzer gezogen
+      if (w !== t.w) { t.w = w; body._autoW = null; this.changed(); }
     }).observe(body, { attributes: true, attributeFilter: ['style'] });
     pv.textSheet.appendChild(wrap);
     return body;
@@ -574,8 +731,8 @@ export class Editor {
     }
     const t = {
       id: uid(),
-      x: Math.max(0, Math.min(PAGE_W - 120, Math.round(x))),
-      y: Math.max(0, Math.min(pv.data.h - LINE, Math.floor(y / LINE) * LINE + 2)),
+      x: Math.max(0, Math.min(PAGE_W - 160, Math.round(x))),
+      y: Math.max(0, Math.min(pv.data.h - LINE, Math.floor(y / LINE) * LINE)),
       w: null, html: '',
     };
     pv.data.texts.push(t);
@@ -627,8 +784,8 @@ export class Editor {
     }
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      const y = t.y + body.offsetHeight + LINE;
-      if (y < pv.data.h - LINE) this.createTextBox(pv, t.x, y, true);
+      const y = Math.ceil((t.y + body.offsetHeight) / LINE) * LINE + LINE;
+      if (y < pv.data.h - LINE) this.createTextBox(pv, t.x, y + 1, true);
       return;
     }
     e.stopPropagation();   // globale Kurzbefehle nicht auslösen
@@ -662,8 +819,8 @@ export class Editor {
 
   endTextDrag() {
     const t = this.textDrag.wrap._t;
-    t.y = Math.round(t.y / LINE) * LINE + 2;   // an Linien einrasten
-    this.textDrag.wrap.style.top = t.y + 'px';
+    t.y = Math.round(t.y / LINE) * LINE;   // an Linien einrasten
+    this.styleBox(this.textDrag.wrap);
     this.textDrag = null;
     this.changed();
   }
@@ -679,11 +836,11 @@ export class Editor {
       let maxY = 0;
       for (const st of pv.data.strokes) for (const p of st.points) maxY = Math.max(maxY, p[1]);
       for (const wrap of pv.textSheet.querySelectorAll('.tb')) maxY = Math.max(maxY, wrap._t.y + wrap.offsetHeight);
-      x = 100; y = maxY ? maxY + LINE * 0.6 : LINE * 3;
+      x = 96; y = maxY ? Math.ceil(maxY / LINE) * LINE + 1 : LINE * 3 + 1;
       if (y > pv.data.h - LINE * 2) {
         const idx = this.pages.indexOf(pv);
         pv = this.pages[idx + 1] || this.addPage(false);
-        y = LINE * 3;
+        y = LINE * 3 + 1;
       }
     }
     const body = this.createTextBox(pv, x, y, true);
@@ -768,7 +925,7 @@ export class Editor {
           this.pages.splice(i, 1); this.note.pages.splice(i, 1); pv.el.remove();
         } else {
           this.note.pages.splice(a.index, 0, pv.data);
-          this.container.insertBefore(pv.el, this.pages[a.index] ? this.pages[a.index].el : this.addBtn);
+          this.inner.insertBefore(pv.el, this.pages[a.index] ? this.pages[a.index].el : this.addBtn);
           this.pages.splice(a.index, 0, pv);
         }
         this.pages.forEach((p, i) => { p.num.textContent = `${i + 1} / ${this.pages.length}`; });
@@ -791,6 +948,22 @@ export class Editor {
 }
 
 /* ---------------- Hilfsfunktionen ---------------- */
+
+const shiftCache = new Map();
+/** Verschiebung, damit die Schrift-Grundlinie 5 px über der Papierlinie liegt (gemessen, nicht geschätzt). */
+function baselineShift(font, size, lh) {
+  const key = font + '|' + size + '|' + lh;
+  if (shiftCache.has(key)) return shiftCache.get(key);
+  const d = document.createElement('div');
+  d.style.cssText = `position:absolute;visibility:hidden;left:-9999px;top:0;white-space:nowrap;font-family:${FONTS[font] || FONTS.sans};font-size:${size}px;line-height:${lh}px`;
+  d.innerHTML = 'Hg<span style="display:inline-block;width:0;height:0;vertical-align:baseline"></span>';
+  document.body.appendChild(d);
+  const base = d.lastChild.offsetTop;
+  d.remove();
+  const shift = Math.round(lh - 5 - base);
+  shiftCache.set(key, shift);
+  return shift;
+}
 
 function capture(el, id) { try { el.setPointerCapture(id); } catch { /* Zeiger schon weg */ } }
 

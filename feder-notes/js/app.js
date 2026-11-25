@@ -1,5 +1,5 @@
 import { db, uid } from './db.js';
-import { Editor, newPage, drawStroke, PAGE_W } from './editor.js';
+import { Editor, newPage, drawStroke, PAGE_W, FONTS, DEFAULT_TEXT } from './editor.js';
 import { importFileAsNote, fileToPages, exportBackup, readBackup } from './import.js';
 import { Sync } from './sync.js';
 import { escapeHTML } from './sanitize.js';
@@ -18,7 +18,11 @@ const KINDS = [
   ['fountain', 'Füller'], ['ball', 'Kuli'], ['pencil', 'Bleistift'], ['calli', 'Kalligrafie'],
 ];
 const TOOLS = ['pen', 'highlighter', 'eraser', 'lasso', 'text'];
-const wide = () => window.matchMedia('(min-width: 821px)').matches;
+const wide = () => false;   // immer eine Ansicht: Übersicht ODER Notiz (auch am Tablet)
+const FONT_NAMES = { sans: 'Standard', serif: 'Serif', mono: 'Schreibmaschine', hand: 'Handschrift' };
+const SIZES = [16, 18, 20, 22, 24, 26, 28, 30, 32, 34];
+const TEXT_COLORS = ['#1d1d1f', '#5c5c66', '#1c56c9', '#e03131', '#2f9e44', '#ae3ec9', '#f08c00'];
+const PAPERS = [['lined', 'Liniert'], ['grid', 'Kariert'], ['dots', 'Punkte'], ['blank', 'Blanko']];
 
 const state = {
   notes: [],
@@ -27,6 +31,9 @@ const state = {
   search: '',
   extraFolders: [],
   colorSlots: [...DEFAULT_SLOTS],
+  defaults: { paper: 'lined', text: { ...DEFAULT_TEXT } },   // für neue Notizen
+  typing: true,                                              // einfach lostippen → Textfeld
+  theme: 'system',
 };
 
 /* ---------------- Bilder ---------------- */
@@ -46,6 +53,9 @@ const editor = new Editor($('#pages'), {
   getAssetURL,
   onChange: () => scheduleSave(),
   onHistory: (u, r) => { $('#btn-undo').disabled = !u; $('#btn-redo').disabled = !r; },
+  onTextFocus: wrap => showFormatBar(wrap),
+  onTextBlur: () => setTimeout(() => { if (!editor.focusedBox && !formatBarBusy) $('#formatbar').hidden = true; }, 150),
+  onZoomPreview: z => { $('#zoom-chip').textContent = Math.round(z * 100) + ' %'; $('#zoom-chip').hidden = false; },
   onZoom: z => {
     const chip = $('#zoom-chip');
     chip.textContent = Math.round(z * 100) + ' %';
@@ -184,7 +194,10 @@ async function createNote() {
   await flushSave();
   const folder = state.folder !== ALL && state.folder !== TRASH ? state.folder : '';
   const now = Date.now();
-  const note = { id: uid(), title: '', folder, paper: 'lined', pages: [newPage()], createdAt: now, updatedAt: now, deleted: false, dirty: true };
+  const note = {
+    id: uid(), title: '', folder, paper: state.defaults.paper, textStyle: { ...state.defaults.text },
+    pages: [newPage()], createdAt: now, updatedAt: now, deleted: false, dirty: true,
+  };
   state.notes.push(note);
   await db.putNote(note);
   if (state.folder === TRASH) state.folder = ALL;
@@ -200,7 +213,7 @@ async function openNote(note) {
   $('#trash-bar').hidden = !(note && note.deleted);
   if (note) {
     $('#note-title').value = note.title || '';
-    $('#paper').value = note.paper || 'lined';
+    $('#formatbar').hidden = true;
     renderFolderSelect();
     db.setMeta('lastNote', note.id);
     showEditor();
@@ -553,7 +566,6 @@ function savePrefs() {
   prefsTimer = setTimeout(() => db.setMeta('prefs', {
     tool: editor.tool, penKind: editor.penKind, styles: editor.styles, eraser: editor.eraser,
     zoom: editor.zoom, fingerDraws: editor.fingerDraws,
-    homeCollapsed: document.body.classList.contains('home-collapsed'),
   }), 300);
 }
 
@@ -683,6 +695,7 @@ async function openSettings() {
   $('#set-result').textContent = '';
   $('#login-status').textContent = platform === 'web' ? 'Hinweis: Im normalen Browser blockiert Nextcloud die Anmeldung – nutze die App.' : '';
   $('#advanced').open = false;
+  fillGeneralSettings();
   $('#dlg-settings').showModal();
 }
 
@@ -776,7 +789,7 @@ document.addEventListener('keydown', e => {
   if ((e.key === 'Delete' || e.key === 'Backspace') && editor.selection) { e.preventDefault(); editor.deleteSelection(); return; }
   if (e.key === '?') { e.preventDefault(); $('#dlg-shortcuts').showModal(); return; }
   if (e.key === 'PageDown' || e.key === 'PageUp') return;
-  if (!mod && !e.altKey && (e.key.length === 1 || e.key === 'Enter') && !state.current.deleted) {
+  if (state.typing && !mod && !e.altKey && (e.key.length === 1 || e.key === 'Enter') && !state.current.deleted) {
     e.preventDefault();
     editor.typeAnywhere(e.key === 'Enter' ? '' : e.key);
   }
@@ -811,10 +824,9 @@ function wire() {
     if (e.key === 'Escape') closeSearch();
   };
   $('#connect-banner').onclick = openSettings;
-  $('#btn-back').onclick = () => {
-    if (wide()) { document.body.classList.toggle('home-collapsed'); savePrefs(); setTimeout(() => editor.relayout(), 0); }
-    else showHome();
-  };
+  $('#btn-back').onclick = () => showHome();
+  wireFormatBar();
+  wireSettings();
   $('#note-title').oninput = e => { if (state.current) { state.current.title = e.target.value; scheduleSave(); } };
   $('#note-title').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); editor.typeAnywhere(''); } };
   $('#note-folder').onchange = async e => {
@@ -839,12 +851,13 @@ function wire() {
     if (!menu.hidden && !e.target.closest('.menu-wrap')) menu.hidden = true;
     if (!$('#popover').hidden && !e.target.closest('#popover, .tool, .swatch')) closePopover();
   });
-  $('#paper').onchange = e => editor.setPaper(e.target.value);
-  $('#opt-finger').onchange = e => { editor.fingerDraws = e.target.checked; savePrefs(); toast(e.target.checked ? 'Finger zeichnet – mit zwei Fingern scrollen' : 'Finger scrollt – Stift zeichnet'); };
+  $('#opt-finger').onchange = e => { setFingerDraws(e.target.checked); toast(e.target.checked ? 'Finger zeichnet – mit zwei Fingern scrollen' : 'Finger scrollt – Stift zeichnet'); };
   menu.addEventListener('click', e => {
     const act = e.target.dataset && e.target.dataset.act;
     if (!act) return;
     menu.hidden = true;
+    if (act === 'note-settings') openNoteSettings();
+    if (act === 'settings') openSettings();
     if (act === 'add-page') editor.addPage();
     if (act === 'insert-file') chooseFiles(true);
     if (act === 'print') printNote();
@@ -940,6 +953,216 @@ function wire() {
   window.addEventListener('beforeunload', () => { if (saveTimer && state.current) db.putNote(state.current); });
 }
 
+/* ---------------- Word-ähnliche Formatleiste ---------------- */
+let formatBarBusy = false;
+let savedRange = null;
+
+function fillSelect(sel, entries, value) {
+  sel.innerHTML = entries.map(([v, label]) => `<option value="${v}">${label}</option>`).join('');
+  sel.value = String(value);
+}
+const fontEntries = () => Object.keys(FONTS).map(k => [k, FONT_NAMES[k]]);
+const sizeEntries = () => SIZES.map(n => [n, n + ' pt']);
+
+function showFormatBar(wrap) {
+  if (!wrap) return;
+  const st = editor.textStyleOf(wrap._t);
+  fillSelect($('#fmt-font'), fontEntries(), st.font);
+  fillSelect($('#fmt-size'), sizeEntries(), st.size);
+  $('#fmt-spacing').value = String(st.spacing || 1);
+  $('#formatbar').hidden = false;
+  updateFormatState();
+}
+
+function updateFormatState() {
+  if ($('#formatbar').hidden) return;
+  for (const b of document.querySelectorAll('#formatbar .fmt[data-cmd]')) {
+    const cmd = b.dataset.cmd;
+    let on = false;
+    try {
+      if (['bold', 'italic', 'underline', 'strikeThrough', 'justifyCenter', 'justifyRight', 'insertUnorderedList', 'insertOrderedList'].includes(cmd)) on = document.queryCommandState(cmd);
+    } catch { /* nicht unterstützt */ }
+    b.classList.toggle('on', on);
+  }
+}
+
+/** Kastenweite Einstellung (Schrift, Größe, Abstand) für das aktive Textfeld setzen. */
+function setBoxStyle(patch) {
+  const wrap = editor.focusedBox || editor._lastBox;
+  if (!wrap) return;
+  wrap._t.style = { ...(wrap._t.style || {}), ...patch };
+  editor.styleBox(wrap);
+  scheduleSave();
+  restoreFocus(wrap);
+}
+
+function restoreFocus(wrap) {
+  const body = wrap._body;
+  body.focus({ preventScroll: true });
+  if (savedRange) { const s = window.getSelection(); s.removeAllRanges(); s.addRange(savedRange); }
+}
+
+function runFormat(cmd, value) {
+  const wrap = editor.focusedBox || editor._lastBox;
+  if (!wrap) return;
+  if (document.activeElement !== wrap._body) restoreFocus(wrap);
+  document.execCommand('styleWithCSS', false, true);
+  if (cmd === 'mark') {
+    const on = /255, 236, 128|ffec80/i.test(String(document.queryCommandValue('hiliteColor')));
+    document.execCommand('hiliteColor', false, on ? 'transparent' : '#ffec80');
+  } else if (cmd === 'checkbox') {
+    document.execCommand('insertHTML', false, '<span class="cb" contenteditable="false"></span>\u200b');
+  } else if (cmd === 'removeFormat') {
+    document.execCommand('removeFormat');
+    document.execCommand('hiliteColor', false, 'transparent');
+  } else {
+    document.execCommand(cmd, false, value);
+  }
+  wrap._t.html = wrap._body.innerHTML;
+  scheduleSave();
+  updateFormatState();
+}
+
+function wireFormatBar() {
+  const bar = $('#formatbar');
+  // Knöpfe dürfen dem Textfeld den Fokus (und die Markierung) nicht wegnehmen
+  bar.addEventListener('pointerdown', e => {
+    formatBarBusy = true;
+    setTimeout(() => { formatBarBusy = false; }, 400);
+    const sel = window.getSelection();
+    if (sel.rangeCount && editor.focusedBox) savedRange = sel.getRangeAt(0).cloneRange();
+    if (e.target.closest('.fmt')) e.preventDefault();
+  });
+  bar.addEventListener('click', e => {
+    const b = e.target.closest('.fmt');
+    if (!b) return;
+    if (b.dataset.cmd === 'foreColor') { openTextColorPicker(b); return; }
+    runFormat(b.dataset.cmd);
+  });
+  $('#fmt-font').onchange = e => setBoxStyle({ font: e.target.value });
+  $('#fmt-size').onchange = e => setBoxStyle({ size: +e.target.value });
+  $('#fmt-spacing').onchange = e => setBoxStyle({ spacing: +e.target.value });
+  document.addEventListener('selectionchange', () => { if (editor.focusedBox) updateFormatState(); });
+}
+
+function openTextColorPicker(anchor) {
+  const pop = $('#popover');
+  popoverFor = 'textcolor';
+  pop.innerHTML = '<div class="pop-title">Textfarbe</div><div class="palette"></div><p class="pop-hint">Gilt für den markierten Text. Ohne Markierung für das, was du als Nächstes tippst.</p>';
+  buildPalette(pop.querySelector('.palette'), c => {
+    $('#fmt-color-bar').style.background = c;
+    closePopover();
+    runFormat('foreColor', c);
+  });
+  placePopover(anchor);
+}
+
+/* ---------------- Notiz-Einstellungen ---------------- */
+function buildPaperPick(el, value, onPick) {
+  el.innerHTML = '';
+  for (const [k, label] of PAPERS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = value === k ? 'active' : '';
+    b.innerHTML = `<div class="pv paper-${k}"></div>${label}`;
+    b.onclick = () => { el.querySelectorAll('button').forEach(x => x.classList.remove('active')); b.classList.add('active'); onPick(k); };
+    el.appendChild(b);
+  }
+}
+
+function buildMiniPalette(el, value, onPick) {
+  el.innerHTML = '';
+  for (const c of TEXT_COLORS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'swatch' + (value && value.toLowerCase() === c ? ' active' : '');
+    b.style.background = c;
+    b.onclick = () => { el.querySelectorAll('.swatch').forEach(x => x.classList.remove('active')); b.classList.add('active'); onPick(c); };
+    el.appendChild(b);
+  }
+}
+
+function updateSample(st) {
+  const el = $('#note-sample span');
+  el.style.fontFamily = FONTS[st.font];
+  el.style.fontSize = st.size * 0.8 + 'px';
+  el.style.color = st.color;
+}
+
+function openNoteSettings() {
+  const n = state.current;
+  if (!n) return;
+  const st = () => ({ ...DEFAULT_TEXT, ...(n.textStyle || {}) });
+  const apply = patch => {
+    n.textStyle = { ...st(), ...patch };
+    editor.restyleText();
+    updateSample(st());
+    scheduleSave();
+  };
+  buildPaperPick($('#note-paper'), n.paper || 'lined', p => { editor.setPaper(p); });
+  fillSelect($('#note-font'), fontEntries(), st().font);
+  fillSelect($('#note-size'), sizeEntries(), st().size);
+  $('#note-spacing').value = String(st().spacing || 1);
+  buildMiniPalette($('#note-color'), st().color, c => apply({ color: c }));
+  $('#note-font').onchange = e => apply({ font: e.target.value });
+  $('#note-size').onchange = e => apply({ size: +e.target.value });
+  $('#note-spacing').onchange = e => apply({ spacing: +e.target.value });
+  $('#note-reset-boxes').onclick = () => {
+    for (const p of n.pages) for (const t of p.texts) delete t.style;
+    editor.restyleText(); scheduleSave();
+    toast('Alle Textfelder nutzen jetzt die Notiz-Einstellungen');
+  };
+  $('#note-as-default').onclick = async () => {
+    state.defaults = { paper: n.paper || 'lined', text: st() };
+    await saveGeneral();
+    toast('Als Standard für neue Notizen gespeichert');
+  };
+  updateSample(st());
+  $('#dlg-note').showModal();
+}
+
+/* ---------------- Allgemeine Einstellungen ---------------- */
+async function saveGeneral() {
+  await db.setMeta('general', { defaults: state.defaults, typing: state.typing, theme: state.theme });
+}
+
+function applyTheme(theme) {
+  state.theme = theme;
+  if (theme === 'system') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme', theme);
+}
+
+function setFingerDraws(on) {
+  editor.fingerDraws = on;
+  $('#opt-finger').checked = on;
+  $('#def-finger').checked = on;
+  savePrefs();
+}
+
+function fillGeneralSettings() {
+  const d = state.defaults;
+  buildPaperPick($('#def-paper'), d.paper, p => { d.paper = p; saveGeneral(); });
+  fillSelect($('#def-font'), fontEntries(), d.text.font);
+  fillSelect($('#def-size'), sizeEntries(), d.text.size);
+  $('#def-spacing').value = String(d.text.spacing || 1);
+  buildMiniPalette($('#def-color'), d.text.color, c => { d.text.color = c; saveGeneral(); });
+  $('#def-finger').checked = editor.fingerDraws;
+  $('#def-typing').checked = state.typing;
+  $('#def-theme').querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.v === state.theme));
+}
+
+function wireSettings() {
+  const d = () => state.defaults;
+  $('#def-font').onchange = e => { d().text.font = e.target.value; saveGeneral(); };
+  $('#def-size').onchange = e => { d().text.size = +e.target.value; saveGeneral(); };
+  $('#def-spacing').onchange = e => { d().text.spacing = +e.target.value; saveGeneral(); };
+  $('#def-finger').onchange = e => setFingerDraws(e.target.checked);
+  $('#def-typing').onchange = e => { state.typing = e.target.checked; saveGeneral(); };
+  $('#def-theme').querySelectorAll('button').forEach(b => {
+    b.onclick = () => { applyTheme(b.dataset.v); saveGeneral(); fillGeneralSettings(); };
+  });
+}
+
 /* ---------------- Start ---------------- */
 async function init() {
   wire();
@@ -950,7 +1173,10 @@ async function init() {
   if (prefs.zoom) editor.zoom = prefs.zoom;
   editor.fingerDraws = !!prefs.fingerDraws;
   $('#opt-finger').checked = editor.fingerDraws;
-  if (prefs.homeCollapsed) document.body.classList.add('home-collapsed');
+  const general = await db.getMeta('general', {});
+  if (general.defaults) state.defaults = { paper: general.defaults.paper || 'lined', text: { ...DEFAULT_TEXT, ...(general.defaults.text || {}) } };
+  if (general.typing === false) state.typing = false;
+  applyTheme(general.theme || 'system');
   state.colorSlots = await db.getMeta('colorSlots', [...DEFAULT_SLOTS]);
   editor.tool = TOOLS.includes(prefs.tool) ? prefs.tool : 'pen';
   renderToolbar();

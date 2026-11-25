@@ -38,6 +38,14 @@
     <symbol id="i-marker" viewBox="0 0 24 24"><path d="M9 3h6v8l1.5 2v3h-9v-3L9 11z"/><path d="M10 16v4.5l4-1.8V16"/></symbol>
     <symbol id="i-eraser" viewBox="0 0 24 24"><path d="M14.5 4.5l5 5-9 9H6l-2.5-2.5z"/><path d="M9.5 9.5l5 5M10.5 18.5H20"/></symbol>
     <symbol id="i-lasso" viewBox="0 0 24 24"><ellipse cx="12" cy="9.5" rx="8" ry="5.5" stroke-dasharray="2.6 2.4"/><path d="M8 14.5c-1 2 0 4 2 4.5"/></symbol>
+    <symbol id="i-al" viewBox="0 0 24 24"><path d="M4 6h16M4 10h10M4 14h16M4 18h10"/></symbol>
+    <symbol id="i-ac" viewBox="0 0 24 24"><path d="M4 6h16M7 10h10M4 14h16M7 18h10"/></symbol>
+    <symbol id="i-ar" viewBox="0 0 24 24"><path d="M4 6h16M10 10h10M4 14h16M10 18h10"/></symbol>
+    <symbol id="i-ul" viewBox="0 0 24 24"><circle cx="5" cy="7" r="1.2" class="f"/><circle cx="5" cy="12" r="1.2" class="f"/><circle cx="5" cy="17" r="1.2" class="f"/><path d="M9 7h11M9 12h11M9 17h11"/></symbol>
+    <symbol id="i-ol" viewBox="0 0 24 24"><path d="M4 5h1.5v4M4 9h3M4 14.5c0-1 2.8-1 2.8.3 0 .9-2.8 1.8-2.8 3.2h3M10 7h10M10 12h10M10 17h10"/></symbol>
+    <symbol id="i-cbox" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M8 12.5l2.7 2.7L16 9.5"/></symbol>
+    <symbol id="i-clear" viewBox="0 0 24 24"><path d="M6 5h12M12 5l-3 14M4 20l16-16"/></symbol>
+    <symbol id="i-page" viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2.5"/><path d="M9 8h6M9 12h6"/></symbol>
     <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
   </defs>
 </svg>
@@ -79,19 +87,13 @@
       <div class="menu-wrap">
         <button class="icon-btn" id="btn-more" title="Mehr"><svg><use href="#i-more"/></svg></button>
         <div class="menu" id="more-menu" hidden>
+          <button data-act="note-settings">Notiz-Einstellungen (Papier, Schrift)</button>
           <label class="menu-row">Ordner <select id="note-folder"></select></label>
-          <label class="menu-row">Papier
-            <select id="paper">
-              <option value="lined">Liniert</option>
-              <option value="grid">Kariert</option>
-              <option value="dots">Punkte</option>
-              <option value="blank">Blanko</option>
-            </select>
-          </label>
           <button data-act="add-page">Neue Seite</button>
           <button data-act="insert-file">PDF / Bild einfügen</button>
           <button data-act="print">Als PDF speichern / drucken</button>
           <label class="menu-row switch-row">Mit dem Finger zeichnen <input type="checkbox" id="opt-finger" class="switch"></label>
+          <button data-act="settings">Allgemeine Einstellungen</button>
           <button data-act="shortcuts">Tastenkürzel</button>
           <hr>
           <button data-act="delete" class="danger">In den Papierkorb</button>
@@ -109,6 +111,30 @@
       </div>
       <span class="tb-sep"></span>
       <div id="colors" class="colors" title="Farbe – aktive Farbe nochmal tippen zum Ändern"></div>
+    </div>
+
+    <div id="formatbar" role="toolbar" aria-label="Textformat" hidden>
+      <select id="fmt-font" class="fmt-select" title="Schriftart (gilt für dieses Textfeld)"></select>
+      <select id="fmt-size" class="fmt-select narrow" title="Schriftgröße (gilt für dieses Textfeld)"></select>
+      <span class="tb-sep"></span>
+      <button class="fmt" data-cmd="bold" title="Fett (Strg+B)"><b>F</b></button>
+      <button class="fmt" data-cmd="italic" title="Kursiv (Strg+I)"><i>K</i></button>
+      <button class="fmt" data-cmd="underline" title="Unterstrichen (Strg+U)"><u>U</u></button>
+      <button class="fmt" data-cmd="strikeThrough" title="Durchgestrichen"><s>S</s></button>
+      <button class="fmt color" data-cmd="foreColor" title="Textfarbe für markierten Text"><span>A</span><i id="fmt-color-bar"></i></button>
+      <button class="fmt" data-cmd="mark" title="Markieren (Strg+Umschalt+H)"><svg><use href="#i-marker"/></svg></button>
+      <span class="tb-sep"></span>
+      <button class="fmt" data-cmd="justifyLeft" title="Linksbündig"><svg><use href="#i-al"/></svg></button>
+      <button class="fmt" data-cmd="justifyCenter" title="Zentriert"><svg><use href="#i-ac"/></svg></button>
+      <button class="fmt" data-cmd="justifyRight" title="Rechtsbündig"><svg><use href="#i-ar"/></svg></button>
+      <span class="tb-sep"></span>
+      <button class="fmt" data-cmd="insertUnorderedList" title="Aufzählung (oder „- “ tippen)"><svg><use href="#i-ul"/></svg></button>
+      <button class="fmt" data-cmd="insertOrderedList" title="Nummerierung (oder „1. “ tippen)"><svg><use href="#i-ol"/></svg></button>
+      <button class="fmt" data-cmd="checkbox" title="Checkbox (oder „[] “ tippen)"><svg><use href="#i-cbox"/></svg></button>
+      <select id="fmt-spacing" class="fmt-select narrow" title="Zeilenabstand (gilt für dieses Textfeld)">
+        <option value="1">1 Zeile</option><option value="2">2 Zeilen</option>
+      </select>
+      <button class="fmt" data-cmd="removeFormat" title="Formatierung entfernen"><svg><use href="#i-clear"/></svg></button>
     </div>
 
     <div id="trash-bar" hidden>
@@ -148,7 +174,8 @@
 <!-- ============ Dialoge ============ -->
 <dialog id="dlg-settings">
   <form method="dialog">
-    <div class="dlg-head"><h2>Nextcloud</h2><button class="icon-btn" value="cancel" title="Schließen"><svg><use href="#i-close"/></svg></button></div>
+    <div class="dlg-head"><h2>Einstellungen</h2><button class="icon-btn" value="cancel" title="Schließen"><svg><use href="#i-close"/></svg></button></div>
+    <h3 class="sec">Nextcloud</h3>
 
     <div id="nc-connected" hidden>
       <div class="connected-card">
@@ -168,10 +195,24 @@
       <p id="login-status" class="muted"></p>
     </div>
 
+    <h3 class="sec">Neue Notizen</h3>
+    <div class="paper-pick" id="def-paper"></div>
+    <div class="set-row">Schriftart <select id="def-font"></select></div>
+    <div class="set-row">Schriftgröße <select id="def-size"></select></div>
+    <div class="set-row">Zeilenabstand <select id="def-spacing"><option value="1">1 Zeile</option><option value="2">2 Zeilen</option></select></div>
+    <div class="set-row">Textfarbe <div class="mini-palette" id="def-color"></div></div>
+
+    <h3 class="sec">Bedienung</h3>
+    <label class="set-row">Mit dem Finger zeichnen <input type="checkbox" id="def-finger" class="switch"></label>
+    <label class="set-row">Einfach lostippen erstellt ein Textfeld <input type="checkbox" id="def-typing" class="switch"></label>
+    <label class="set-row">Automatisch synchronisieren <input type="checkbox" id="set-auto" class="switch"></label>
+
+    <h3 class="sec">Darstellung</h3>
+    <div class="seg" id="def-theme"><button type="button" data-v="system">System</button><button type="button" data-v="light">Hell</button><button type="button" data-v="dark">Dunkel</button></div>
+
     <details id="advanced">
       <summary>Erweitert</summary>
       <label>Ordner in Nextcloud<input id="set-nc-folder" placeholder="FederNotes" autocapitalize="off" spellcheck="false"></label>
-      <label class="check"><input type="checkbox" id="set-auto"> Automatisch synchronisieren</label>
       <p class="muted small">Manuell mit App-Passwort (Nextcloud → Einstellungen → Sicherheit):</p>
       <label>Benutzername<input id="set-nc-user" autocomplete="username" autocapitalize="off" spellcheck="false"></label>
       <label>App-Passwort<input id="set-nc-pass" type="password" autocomplete="off"></label>
@@ -188,6 +229,24 @@
       <hr>
       <button type="button" class="btn" id="btn-backup">Backup-Datei exportieren</button>
     </details>
+  </form>
+</dialog>
+
+<dialog id="dlg-note">
+  <form method="dialog">
+    <div class="dlg-head"><h2>Notiz-Einstellungen</h2><button class="icon-btn" value="cancel" title="Schließen"><svg><use href="#i-close"/></svg></button></div>
+    <h3 class="sec">Papier</h3>
+    <div class="paper-pick" id="note-paper"></div>
+    <h3 class="sec">Text in dieser Notiz</h3>
+    <div class="set-row">Schriftart <select id="note-font"></select></div>
+    <div class="set-row">Schriftgröße <select id="note-size"></select></div>
+    <div class="set-row">Zeilenabstand <select id="note-spacing"><option value="1">1 Zeile</option><option value="2">2 Zeilen</option></select></div>
+    <div class="set-row">Textfarbe <div class="mini-palette" id="note-color"></div></div>
+    <div class="sample paper-lined" id="note-sample"><span>Beispieltext – sitzt auf der Linie</span></div>
+    <div class="row">
+      <button type="button" class="btn" id="note-reset-boxes">Einzelformatierung der Textfelder zurücksetzen</button>
+      <button type="button" class="btn" id="note-as-default">Als Standard für neue Notizen</button>
+    </div>
   </form>
 </dialog>
 
