@@ -167,6 +167,14 @@ body.drawer-open #drawer { transform: none; }
 .fmt.color i { position: absolute; left: 10px; right: 10px; bottom: 8px; height: 4px; border-radius: 2px; background: #e03131; }
 .fmt-select { border: 0; background: var(--surface-2); border-radius: 999px; padding: 8px 10px; flex: none; max-width: 150px; cursor: pointer; }
 .fmt-select.narrow { max-width: 96px; }
+.fmt.wide { width: auto; padding: 0 12px; font-size: 14px; font-weight: 600; gap: 6px; display: flex; align-items: center; }
+#formatbar .only-box { display: none; }
+#formatbar.box .only-box { display: grid; }
+.opt-group { margin-bottom: 12px; }
+.opt-label { font-size: 13px; color: var(--muted); margin: 0 2px 6px; }
+.bg-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.bg-row .swatch { width: 32px; height: 32px; }
+.bg-row .swatch.none { background: repeating-linear-gradient(45deg, #fff 0 4px, #ddd 4px 8px); }
 
 /* ---------- Einstellungen ---------- */
 h3.sec { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--accent); margin: 22px 2px 6px; }
@@ -215,8 +223,19 @@ h3.sec { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; colo
 .tb-body:focus { box-shadow: 0 0 0 2px rgba(242,106,27,.45); }
 .tb-body:empty::before { content: "Text…"; color: #b5b0a6; }
 .tb-body p, .tb-body ul, .tb-body ol, .tb-body h1, .tb-body h2, .tb-body h3 { margin: 0; }
-.tb-body h1, .tb-body h2, .tb-body h3 { font-size: 1.25em; font-weight: 700; line-height: inherit; }
-.tb-body ul, .tb-body ol { padding-left: 34px; }
+.tb-body h1, .tb-body h2, .tb-body h3 { font-weight: 700; line-height: inherit; }
+.tb-body h1 { font-size: 1.4em; }
+.tb-body ul, .tb-body ol { padding-left: var(--li, 40px); }
+.tb-body > div, .tb-body > p, .tb-body > h2, .tb-body > h3, .tb-body > ul, .tb-body > ol, .tb-body li { margin-bottom: var(--ps, 0px); }
+.tb-body h2 { font-size: 1.4em; }
+.tb-body h3 { font-size: 1.15em; }
+/* Haupttext (Tastatur-Modus): nur im Tastatur-Modus antippbar, damit Maus/Finger sonst zeichnen können */
+.tb.main { pointer-events: none; }
+#pages[data-tool="keyboard"] .tb.main .tb-body { pointer-events: auto; }
+#pages[data-tool="keyboard"] .page { cursor: text; }
+.tb.main .tb-body { resize: none; min-height: 40px; }
+.tb.main .tb-body:focus { box-shadow: none; }
+.tb.main .tb-body:empty::before { content: ""; }
 .tb-body mark { background: #ffec80; color: inherit; }
 .tb-body .cb { display: inline-block; width: 22px; height: 22px; border: 2px solid #555; border-radius: 6px; vertical-align: -3px; margin-right: 8px; cursor: pointer; text-align: center; line-height: 17px; font-size: 18px; }
 .tb-body .cb.on::after { content: "✓"; color: #2f9e44; font-weight: 700; }

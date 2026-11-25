@@ -70,25 +70,46 @@ Wird dieselbe Notiz auf zwei Geräten gleichzeitig geändert, bleiben beide Vers
 - **Finger:** Ein Finger scrollt, zwei Finger zoomen. Ist unter ⋯ „Mit dem Finger zeichnen“ an, zeichnet ein Finger, und mit zwei Fingern scrollst und zoomst du.
 - Die **Zurück-Taste** von Android führt vom Editor zur Übersicht.
 
-## Text schreiben (wie in Word, aber auf den Linien)
+## Text schreiben – wie in Word, aber auf den Linien
 
-- **Textfeld anlegen:** Wähle das **T**-Werkzeug und tippe auf die Seite, oder fang mit einer Tastatur einfach an zu tippen. Das Feld rastet auf der Linie ein und reicht bis zum rechten Seitenrand.
-- **Auf den Linien:** Jede Zeile sitzt auf einer Papierlinie, egal welche Schrift und Größe du nimmst. Bei „2 Zeilen“ Abstand schreibst du auf jeder zweiten Linie.
-- **Formatleiste:** Sie erscheint, sobald du in einem Textfeld bist:
-  - Schriftart (Standard, Serif, Schreibmaschine, Handschrift) und Größe
-  - **F**ett, *K*ursiv, U̲nterstrichen, Durchgestrichen
-  - Textfarbe und Markieren
-  - linksbündig, zentriert, rechtsbündig
-  - Aufzählung, Nummerierung, Checkbox
-  - Zeilenabstand und „Formatierung entfernen“
-- **Notiz-Einstellungen** (⋯ → Notiz-Einstellungen): Papier, Schriftart, Größe, Zeilenabstand und Textfarbe für die ganze Notiz, mit Vorschau. Mit „Als Standard für neue Notizen“ werden sie für alle neuen Notizen übernommen.
-- **Allgemeine Einstellungen** (⚙ in der Übersicht oder ⋯ in der Notiz):
+**Tastatur-Modus (⌨):**
+- Wenn du ⌨ antippst oder einfach mit einer Tastatur lostippst, beginnt der Cursor am Anfang der nächsten freien Zeile. Das ist am linken Rand, unter deinem bisherigen Text und deiner Handschrift.
+- Tippst du eine leere Linie an, schreibst du am Anfang genau dieser Linie weiter.
+- Ist eine Seite voll, läuft der Text auf die nächste Seite weiter.
+
+**Freies Textfeld (⬚T):** Antippen, wo es hin soll. Unter „Feld“ in der Formatleiste stellst du Rahmen und Hintergrund ein oder löschst das Feld. Die Breite ziehst du am Rand, verschoben wird am Griff ⠿.
+
+**Formatleiste (wie in Word):**
+- Formatvorlage (Standard, Überschrift 1/2), Schriftart, Größe
+- **F**ett, *K*ursiv, U̲nterstrichen, Durchgestrichen, Textfarbe, Markieren
+- linksbündig, zentriert, rechtsbündig
+- Aufzählung, Nummerierung, Checkbox, Einzug verkleinern/vergrößern
+- **Absatz:** Zeilenabstand (1/2/3 Linien), Abstand nach Absatz, Einzug bei Aufzählungen
+
+Alles bleibt dabei auf den Papierlinien.
+
+**Tastatur wie in Word:**
+
+| Taste | Wirkung |
+|---|---|
+| <kbd>Tab</kbd> / <kbd>Umschalt</kbd>+<kbd>Tab</kbd> | Aufzählung eine Ebene tiefer/höher, sonst Tabstopp |
+| <kbd>Strg</kbd>+<kbd>B</kbd>/<kbd>I</kbd>/<kbd>U</kbd> | Fett/Kursiv/Unterstrichen |
+| <kbd>Strg</kbd>+<kbd>L</kbd>/<kbd>E</kbd>/<kbd>R</kbd> | Ausrichtung |
+| <kbd>Strg</kbd>+<kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> | Zeilenabstand |
+| <kbd>Strg</kbd>+<kbd>Alt</kbd>+<kbd>1</kbd>/<kbd>2</kbd> | Überschriften |
+| <kbd>Strg</kbd>+<kbd>Umschalt</kbd>+<kbd>N</kbd> | Standard |
+| <kbd>Strg</kbd>+<kbd>Umschalt</kbd>+<kbd>L</kbd> | Aufzählung |
+| <kbd>Strg</kbd>+<kbd>Umschalt</kbd>+<kbd>&lt;</kbd>/<kbd>&gt;</kbd> | Schriftgröße |
+
+**Einstellungen:**
+- **Notiz-Einstellungen** (⋯): Papier, Schrift, Größe, Farbe, Zeilenabstand, Absatzabstand und Einzug für die Notiz. Mit „Als Standard für neue Notizen“ gelten sie auch für alle neuen Notizen.
+- **Allgemeine Einstellungen** (⚙):
   - Nextcloud
-  - Standard für neue Notizen
-  - Mit dem Finger zeichnen
-  - Einfach lostippen an/aus
-  - Automatisch synchronisieren
-  - Hell/Dunkel/System
+  - Standards für neue Notizen
+  - Finger-Zeichnen
+  - Lostippen an/aus
+  - Sync
+  - Hell/Dunkel
 
 ## Für Entwickler
 

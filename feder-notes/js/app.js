@@ -17,9 +17,9 @@ const PALETTE = [
 const KINDS = [
   ['fountain', 'Füller'], ['ball', 'Kuli'], ['pencil', 'Bleistift'], ['calli', 'Kalligrafie'],
 ];
-const TOOLS = ['pen', 'highlighter', 'eraser', 'lasso', 'text'];
+const TOOLS = ['pen', 'highlighter', 'eraser', 'lasso', 'keyboard', 'text'];
 const wide = () => false;   // immer eine Ansicht: Übersicht ODER Notiz (auch am Tablet)
-const FONT_NAMES = { sans: 'Standard', serif: 'Serif', mono: 'Schreibmaschine', hand: 'Handschrift' };
+const FONT_NAMES = { sans: 'Sans', serif: 'Serif', mono: 'Schreibmaschine', hand: 'Handschrift' };
 const SIZES = [16, 18, 20, 22, 24, 26, 28, 30, 32, 34];
 const TEXT_COLORS = ['#1d1d1f', '#5c5c66', '#1c56c9', '#e03131', '#2f9e44', '#ae3ec9', '#f08c00'];
 const PAPERS = [['lined', 'Liniert'], ['grid', 'Kariert'], ['dots', 'Punkte'], ['blank', 'Blanko']];
@@ -54,6 +54,8 @@ const editor = new Editor($('#pages'), {
   onChange: () => scheduleSave(),
   onHistory: (u, r) => { $('#btn-undo').disabled = !u; $('#btn-redo').disabled = !r; },
   onTextFocus: wrap => showFormatBar(wrap),
+  onKeyboardMode: () => { if (editor.tool !== 'keyboard') { editor.tool = 'keyboard'; $('#pages').dataset.tool = 'keyboard'; renderToolbar(); savePrefs(); } },
+  onFormatChange: () => { const w = editor.focusedBox; if (w) showFormatBar(w); },
   onTextBlur: () => setTimeout(() => { if (!editor.focusedBox && !formatBarBusy) $('#formatbar').hidden = true; }, 150),
   onZoomPreview: z => { $('#zoom-chip').textContent = Math.round(z * 100) + ' %'; $('#zoom-chip').hidden = false; },
   onZoom: z => {
@@ -137,7 +139,7 @@ async function makeThumb(n) {
   ctx.fillStyle = '#1d1d1f';
   ctx.font = '24px sans-serif';
   const div = document.createElement('div');
-  for (const t of page.texts) {
+  for (const t of [page.main && { ...page.main, x: 96, y: 80, w: 864 }, ...page.texts].filter(Boolean)) {
     div.innerHTML = (t.html || '').replace(/<(\/?(?:div|p|li|h[1-3]|br)\b[^>]*)>/gi, '\n<$1>');
     const maxW = t.w || 840;
     let y = t.y + 28;
@@ -175,7 +177,7 @@ function noteBodyText(n) {
   const div = document.createElement('div');
   const parts = [];
   for (const p of n.pages) {
-    for (const t of p.texts) { div.innerHTML = (t.html || '').replace(/<(\/?(?:div|p|li|h[1-3]|br)\b[^>]*)>/gi, ' <$1>'); parts.push(div.textContent); }
+    for (const t of [p.main, ...p.texts].filter(Boolean)) { div.innerHTML = (t.html || '').replace(/<(\/?(?:div|p|li|h[1-3]|br)\b[^>]*)>/gi, ' <$1>'); parts.push(div.textContent); }
     if (p.searchText) parts.push(p.searchText);
   }
   const text = parts.join(' ').replace(/\s+/g, ' ').trim();
@@ -363,9 +365,12 @@ async function addFolder(name) {
 /* ---------------- Werkzeuge & Farben ---------------- */
 function setTool(tool) {
   editor.tool = tool;
+  $('#pages').dataset.tool = tool;
   if (tool !== 'lasso') editor.clearSelection();
   renderToolbar();
   savePrefs();
+  if (tool === 'keyboard' && state.current && !state.current.deleted) editor.focusKeyboard();
+  else if (tool !== 'text' && editor.focusedBox) document.activeElement.blur();
 }
 
 function onToolClick(tool) {
@@ -375,6 +380,7 @@ function onToolClick(tool) {
     return;
   }
   closePopover();
+  if (editor.tool === tool && tool === 'keyboard') { editor.focusKeyboard(); return; }
   setTool(tool);
 }
 
@@ -774,7 +780,7 @@ document.addEventListener('keydown', e => {
   if (mod && k === '-') { e.preventDefault(); editor.setZoom(editor.zoom / 1.15); return; }
   if (mod && k === '0') { e.preventDefault(); editor.setZoom(1); return; }
   if (mod && e.shiftKey && e.key === 'Enter') { e.preventDefault(); editor.addPage(); return; }
-  if (e.altKey && !mod && /^Digit[1-5]$/.test(e.code)) { e.preventDefault(); setTool(TOOLS[+e.code.slice(5) - 1]); return; }
+  if (e.altKey && !mod && /^Digit[1-6]$/.test(e.code)) { e.preventDefault(); setTool(TOOLS[+e.code.slice(5) - 1]); return; }
   if (e.altKey && !mod && (e.code === 'KeyQ' || e.code === 'KeyW')) {
     e.preventDefault();
     const cur = state.colorSlots.findIndex(c => c.toLowerCase() === editor.styles[currentInkKey()].color.toLowerCase());
@@ -849,7 +855,7 @@ function wire() {
   $('#btn-more').onclick = e => { e.stopPropagation(); closePopover(); menu.hidden = !menu.hidden; };
   document.addEventListener('pointerdown', e => {
     if (!menu.hidden && !e.target.closest('.menu-wrap')) menu.hidden = true;
-    if (!$('#popover').hidden && !e.target.closest('#popover, .tool, .swatch')) closePopover();
+    if (!$('#popover').hidden && !e.target.closest('#popover, .tool, .swatch, #formatbar')) closePopover();
   });
   $('#opt-finger').onchange = e => { setFingerDraws(e.target.checked); toast(e.target.checked ? 'Finger zeichnet – mit zwei Fingern scrollen' : 'Finger scrollt – Stift zeichnet'); };
   menu.addEventListener('click', e => {
@@ -964,12 +970,14 @@ function fillSelect(sel, entries, value) {
 const fontEntries = () => Object.keys(FONTS).map(k => [k, FONT_NAMES[k]]);
 const sizeEntries = () => SIZES.map(n => [n, n + ' pt']);
 
+function boxStyle(wrap) { return wrap._main ? editor.textStyleOf({}) : editor.textStyleOf(wrap._t); }
+
 function showFormatBar(wrap) {
   if (!wrap) return;
-  const st = editor.textStyleOf(wrap._t);
+  const st = boxStyle(wrap);
   fillSelect($('#fmt-font'), fontEntries(), st.font);
   fillSelect($('#fmt-size'), sizeEntries(), st.size);
-  $('#fmt-spacing').value = String(st.spacing || 1);
+  $('#formatbar').classList.toggle('box', !wrap._main);
   $('#formatbar').hidden = false;
   updateFormatState();
 }
@@ -990,9 +998,7 @@ function updateFormatState() {
 function setBoxStyle(patch) {
   const wrap = editor.focusedBox || editor._lastBox;
   if (!wrap) return;
-  wrap._t.style = { ...(wrap._t.style || {}), ...patch };
-  editor.styleBox(wrap);
-  scheduleSave();
+  editor.applyBoxStyle(wrap, patch);     // Haupttext: gilt für die ganze Notiz
   restoreFocus(wrap);
 }
 
@@ -1012,6 +1018,13 @@ function runFormat(cmd, value) {
     document.execCommand('hiliteColor', false, on ? 'transparent' : '#ffec80');
   } else if (cmd === 'checkbox') {
     document.execCommand('insertHTML', false, '<span class="cb" contenteditable="false"></span>\u200b');
+  } else if (cmd === 'indent' || cmd === 'outdent') {
+    const node = window.getSelection().anchorNode;
+    const el = node && (node.nodeType === 1 ? node : node.parentElement);
+    if (el && el.closest('li')) document.execCommand(cmd);
+    else editor.indentBlock(wrap._body, cmd === 'indent' ? 1 : -1);
+  } else if (cmd === 'block') {
+    document.execCommand('formatBlock', false, value);
   } else if (cmd === 'removeFormat') {
     document.execCommand('removeFormat');
     document.execCommand('hiliteColor', false, 'transparent');
@@ -1020,6 +1033,7 @@ function runFormat(cmd, value) {
   }
   wrap._t.html = wrap._body.innerHTML;
   scheduleSave();
+  if (wrap._main) editor.flowOverflow(wrap._pv);
   updateFormatState();
 }
 
@@ -1037,12 +1051,63 @@ function wireFormatBar() {
     const b = e.target.closest('.fmt');
     if (!b) return;
     if (b.dataset.cmd === 'foreColor') { openTextColorPicker(b); return; }
+    if (b.dataset.cmd === 'para') { openParaPopover(b); return; }
+    if (b.dataset.cmd === 'box') { openBoxPopover(b); return; }
     runFormat(b.dataset.cmd);
   });
   $('#fmt-font').onchange = e => setBoxStyle({ font: e.target.value });
   $('#fmt-size').onchange = e => setBoxStyle({ size: +e.target.value });
-  $('#fmt-spacing').onchange = e => setBoxStyle({ spacing: +e.target.value });
+  $('#fmt-block').onchange = e => { runFormat('block', e.target.value); e.target.value = 'div'; };
   document.addEventListener('selectionchange', () => { if (editor.focusedBox) updateFormatState(); });
+}
+
+/** Absatz-Einstellungen wie in Word (bleiben immer auf den Papierlinien). */
+function openParaPopover(anchor) {
+  const wrap = editor.focusedBox || editor._lastBox;
+  if (!wrap) return;
+  const pop = $('#popover');
+  popoverFor = 'para';
+  const seg = (name, opts) => `<div class="opt-group"><div class="opt-label">${name}</div><div class="seg">${opts}</div></div>`;
+  pop.innerHTML = `<div class="pop-title">Absatz${wrap._main ? ' <small class="muted">(ganze Notiz)</small>' : ' <small class="muted">(dieses Textfeld)</small>'}</div>
+    ${seg('Zeilenabstand', [1, 2, 3].map(v => `<button data-k="spacing" data-v="${v}">${v} ${v === 1 ? 'Zeile' : 'Zeilen'}</button>`).join(''))}
+    ${seg('Abstand nach Absatz', [[0, 'Keiner'], [1, '1 Zeile']].map(([v, l]) => `<button data-k="para" data-v="${v}">${l}</button>`).join(''))}
+    ${seg('Einzug bei Aufzählungen', [[24, 'Klein'], [40, 'Mittel'], [64, 'Groß'], [96, 'Sehr groß']].map(([v, l]) => `<button data-k="indent" data-v="${v}">${l}</button>`).join(''))}
+    <p class="pop-hint">Tab rückt eine Aufzählung eine Ebene tiefer, Umschalt+Tab wieder zurück – wie in Word.</p>`;
+  const sync = () => {
+    const st = boxStyle(wrap);
+    pop.querySelectorAll('.seg button').forEach(b => b.classList.toggle('active', String(st[b.dataset.k] ?? '') === b.dataset.v));
+  };
+  pop.querySelectorAll('.seg button').forEach(b => {
+    b.onpointerdown = e => e.preventDefault();
+    b.onclick = () => { editor.applyBoxStyle(wrap, { [b.dataset.k]: +b.dataset.v }); sync(); };
+  });
+  sync();
+  placePopover(anchor);
+}
+
+/** Freies Textfeld anpassen: Rahmen, Hintergrund, löschen. */
+function openBoxPopover(anchor) {
+  const wrap = editor.focusedBox || editor._lastBox;
+  if (!wrap || wrap._main) return;
+  const pop = $('#popover');
+  popoverFor = 'box';
+  const BG = [null, '#fff6bf', '#e7f0ff', '#e6f7ea', '#fde7ef', '#f1f1f3'];
+  pop.innerHTML = `<div class="pop-title">Textfeld</div>
+    <div class="opt-group"><div class="opt-label">Rahmen</div><div class="seg">
+      <button data-b="0">Kein</button><button data-b="1">Dünn</button><button data-b="3">Dick</button></div></div>
+    <div class="opt-group"><div class="opt-label">Hintergrund</div><div class="bg-row">${BG.map(c => `<button class="swatch${c ? '' : ' none'}" data-bg="${c || ''}" style="${c ? 'background:' + c : ''}"></button>`).join('')}</div></div>
+    <p class="pop-hint">Breite: am rechten unteren Rand ziehen. Verschieben: am Griff ⠿ links ziehen.</p>
+    <button class="btn wide danger" data-act="del">Textfeld löschen</button>`;
+  const sync = () => {
+    const b = wrap._t.box || {};
+    pop.querySelectorAll('[data-b]').forEach(x => x.classList.toggle('active', +x.dataset.b === (b.border || 0)));
+    pop.querySelectorAll('[data-bg]').forEach(x => x.classList.toggle('active', x.dataset.bg === (b.bg || '')));
+  };
+  pop.querySelectorAll('[data-b]').forEach(x => { x.onpointerdown = e => e.preventDefault(); x.onclick = () => { editor.setBoxLook(wrap, { border: +x.dataset.b }); sync(); }; });
+  pop.querySelectorAll('[data-bg]').forEach(x => { x.onpointerdown = e => e.preventDefault(); x.onclick = () => { editor.setBoxLook(wrap, { bg: x.dataset.bg || null }); sync(); }; });
+  pop.querySelector('[data-act=del]').onclick = () => { closePopover(); editor.deleteBox(wrap); $('#formatbar').hidden = true; };
+  sync();
+  placePopover(anchor);
 }
 
 function openTextColorPicker(anchor) {
@@ -1103,6 +1168,10 @@ function openNoteSettings() {
   fillSelect($('#note-font'), fontEntries(), st().font);
   fillSelect($('#note-size'), sizeEntries(), st().size);
   $('#note-spacing').value = String(st().spacing || 1);
+  $('#note-para').value = String(st().para || 0);
+  $('#note-indent').value = String(st().indent || 40);
+  $('#note-para').onchange = e => apply({ para: +e.target.value });
+  $('#note-indent').onchange = e => apply({ indent: +e.target.value });
   buildMiniPalette($('#note-color'), st().color, c => apply({ color: c }));
   $('#note-font').onchange = e => apply({ font: e.target.value });
   $('#note-size').onchange = e => apply({ size: +e.target.value });
@@ -1145,6 +1214,8 @@ function fillGeneralSettings() {
   fillSelect($('#def-font'), fontEntries(), d.text.font);
   fillSelect($('#def-size'), sizeEntries(), d.text.size);
   $('#def-spacing').value = String(d.text.spacing || 1);
+  $('#def-para').value = String(d.text.para || 0);
+  $('#def-indent').value = String(d.text.indent || 40);
   buildMiniPalette($('#def-color'), d.text.color, c => { d.text.color = c; saveGeneral(); });
   $('#def-finger').checked = editor.fingerDraws;
   $('#def-typing').checked = state.typing;
@@ -1156,6 +1227,8 @@ function wireSettings() {
   $('#def-font').onchange = e => { d().text.font = e.target.value; saveGeneral(); };
   $('#def-size').onchange = e => { d().text.size = +e.target.value; saveGeneral(); };
   $('#def-spacing').onchange = e => { d().text.spacing = +e.target.value; saveGeneral(); };
+  $('#def-para').onchange = e => { d().text.para = +e.target.value; saveGeneral(); };
+  $('#def-indent').onchange = e => { d().text.indent = +e.target.value; saveGeneral(); };
   $('#def-finger').onchange = e => setFingerDraws(e.target.checked);
   $('#def-typing').onchange = e => { state.typing = e.target.checked; saveGeneral(); };
   $('#def-theme').querySelectorAll('button').forEach(b => {
@@ -1179,6 +1252,7 @@ async function init() {
   applyTheme(general.theme || 'system');
   state.colorSlots = await db.getMeta('colorSlots', [...DEFAULT_SLOTS]);
   editor.tool = TOOLS.includes(prefs.tool) ? prefs.tool : 'pen';
+  $('#pages').dataset.tool = editor.tool;
   renderToolbar();
 
   state.extraFolders = await db.getMeta('folders', []);

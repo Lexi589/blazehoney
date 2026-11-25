@@ -14,7 +14,10 @@ export const FONTS = {
   mono: '"Roboto Mono", "Droid Sans Mono", Consolas, "Courier New", monospace',
   hand: '"Dancing Script", "Segoe Script", "Comic Sans MS", cursive',
 };
-export const DEFAULT_TEXT = { font: 'sans', size: 24, color: '#1d1d1f', spacing: 1 };
+export const DEFAULT_TEXT = { font: 'sans', size: 24, color: '#1d1d1f', spacing: 1, para: 0, indent: 40 };
+// Haupttext (Tastatur-Modus): beginnt wie in Word am linken Rand und auf der ersten Schreiblinie
+const MAIN_X = 96, MAIN_TOP = 80, MAIN_BOTTOM = 40, MAIN_RIGHT = 40;
+const TAB = 60;   // Tabstopp-Abstand (≈ 1,25 cm wie in Word)
 
 export function newPage() {
   return { id: uid(), h: A4_H, bg: null, strokes: [], texts: [] };
@@ -123,6 +126,7 @@ export class Editor {
     const pv = { data, el, bgSheet, ink, live, textSheet, num, k: 1, s: 1, visible: false, drawnK: 0, liveOn: false };
     el._pv = pv;
     this.applyBackground(pv);
+    this.buildMain(pv);
     data.texts.forEach(t => this.buildTextBox(pv, t));
 
     const before = this.pages[index] ? this.pages[index].el : this.addBtn || null;
@@ -333,7 +337,7 @@ export class Editor {
 
   effectiveTool(e) {
     if (e.pointerType === 'pen' && ((e.buttons & 32) || (e.buttons & 2) || e.button === 5 || e.button === 2)) return 'eraser';
-    if (e.pointerType === 'pen' && this.tool === 'text') return 'pen';  // Stift schreibt immer
+    if (e.pointerType === 'pen' && (this.tool === 'text' || this.tool === 'keyboard')) return 'pen';  // Stift schreibt immer
     return this.tool;
   }
 
@@ -367,6 +371,13 @@ export class Editor {
     const [x, y] = this.pos(pv, e);
     const inText = e.target.closest('.tb');
 
+    // Tastatur-Modus: Tippen unter die letzte Zeile → an den Anfang dieser Linie (nicht ans Textende)
+    if (inText && inText.classList.contains('main') && e.pointerType === 'mouse' && this.tool === 'keyboard' && !this.readOnly
+        && y - MAIN_TOP > this.mainUsed(pv)) {
+      e.preventDefault();
+      this.placeKeyboardCaret(pv, y, e);
+      return;
+    }
     // Maus/Finger in einem Textfeld → normales Textverhalten
     if (inText && e.pointerType !== 'pen' && !e.target.closest('.tb-grip')) return;
     if (e.target.closest('.tb-grip')) { this.startTextDrag(e, inText); return; }
@@ -380,6 +391,10 @@ export class Editor {
       document.activeElement.blur();
     }
 
+    if (tool === 'keyboard') {
+      this.placeKeyboardCaret(pv, y, e);
+      return;
+    }
     if (tool === 'text') {
       this.createTextBox(pv, x, y, true);
       return;
@@ -626,6 +641,12 @@ export class Editor {
 
   handleTap(target, e) {
     const body = target.closest && target.closest('.tb-body');
+    const mainWrap = body && body.closest('.tb.main');
+    if (mainWrap && this.tool === 'keyboard' && !this.readOnly) {
+      const pv = mainWrap._pv;
+      const y = this.pos(pv, e)[1];
+      if (y - MAIN_TOP > this.mainUsed(pv)) { this.placeKeyboardCaret(pv, y, e); return; }
+    }
     if (body) {
       if (target.classList.contains('cb')) { this.toggleCheckbox(target); return; }
       body.focus();
@@ -638,7 +659,9 @@ export class Editor {
     const [x, y] = this.pos(pv, e);
     this.lastPointer = { pv, x, y };
     if (document.activeElement && document.activeElement.closest && document.activeElement.closest('.tb')) document.activeElement.blur();
-    if (this.tool === 'text' && !this.readOnly) this.createTextBox(pv, x, y, true);
+    if (this.readOnly) return;
+    if (this.tool === 'text') this.createTextBox(pv, x, y, true);
+    else if (this.tool === 'keyboard') this.placeKeyboardCaret(pv, y, e);
   }
 
   /* ---------------- Textfelder ---------------- */
@@ -650,7 +673,7 @@ export class Editor {
   /** Schrift, Größe, Farbe, Zeilenabstand anwenden und Grundlinie exakt auf die Papierlinie legen. */
   styleBox(wrap) {
     const t = wrap._t, body = wrap._body;
-    const st = this.textStyleOf(t);
+    const st = wrap._main ? this.textStyleOf({}) : this.textStyleOf(t);
     const lh = LINE * (st.spacing || 1);
     body.style.fontFamily = FONTS[st.font] || FONTS.sans;
     body.style.fontSize = st.size + 'px';
@@ -658,11 +681,236 @@ export class Editor {
     body.style.minHeight = lh + 'px';
     body.style.color = st.color;
     body.style.top = baselineShift(st.font, st.size, lh) + 'px';
+    body.style.setProperty('--ps', (st.para || 0) * LINE + 'px');     // Abstand nach Absatz (ganze Linien)
+    body.style.setProperty('--li', (st.indent || 40) + 'px');          // Einzug bei Aufzählungen
+    body.style.tabSize = TAB + 'px';
+    if (wrap._main) {
+      wrap.style.left = MAIN_X + 'px';
+      wrap.style.top = MAIN_TOP + 'px';
+      body.style.width = (PAGE_W - MAIN_X - MAIN_RIGHT) + 'px';
+      return;
+    }
     wrap.style.left = t.x + 'px';
     wrap.style.top = t.y + 'px';
     const w = t.w || Math.max(120, PAGE_W - t.x - 40);   // Standard: bis zum rechten Seitenrand
     body._autoW = t.w ? null : w;
     body.style.width = w + 'px';
+    const box = t.box || {};
+    body.style.boxShadow = box.border ? `0 0 0 ${box.border}px ${box.borderColor || '#868e96'}` : '';
+    body.style.backgroundColor = box.bg || '';
+  }
+
+  /** Einstellung für ein Textfeld ändern – beim Haupttext gilt sie für die ganze Notiz. */
+  applyBoxStyle(wrap, patch) {
+    if (wrap._main) {
+      this.note.textStyle = { ...DEFAULT_TEXT, ...(this.note.textStyle || {}), ...patch };
+      this.restyleText();
+    } else {
+      wrap._t.style = { ...(wrap._t.style || {}), ...patch };
+      this.styleBox(wrap);
+    }
+    this.changed();
+  }
+
+  setBoxLook(wrap, patch) {
+    if (!wrap || wrap._main) return;
+    wrap._t.box = { ...(wrap._t.box || {}), ...patch };
+    this.styleBox(wrap);
+    this.changed();
+  }
+
+  deleteBox(wrap) {
+    if (!wrap || wrap._main) return;
+    this.removeTextBox(wrap._pv, wrap._t, wrap);
+  }
+
+  /* ---------------- Haupttext (Tastatur-Modus, wie ein Word-Dokument) ---------------- */
+
+  buildMain(pv) {
+    if (!pv.data.main) pv.data.main = { html: '' };
+    const t = pv.data.main;
+    const wrap = document.createElement('div');
+    wrap.className = 'tb main';
+    const body = document.createElement('div');
+    body.className = 'tb-body';
+    body.contentEditable = this.readOnly ? 'false' : 'true';
+    body.spellcheck = true;
+    body.innerHTML = sanitizeHTML(t.html);
+    body.querySelectorAll('.cb').forEach(cb => cb.setAttribute('contenteditable', 'false'));
+    wrap.append(body);
+    wrap._t = t; wrap._pv = pv; wrap._body = body; wrap._main = true;
+    pv.mainWrap = wrap;
+    this.styleBox(wrap);
+    body.addEventListener('focus', () => { this._lastBox = wrap; this.opts.onTextFocus && this.opts.onTextFocus(wrap); });
+    body.addEventListener('blur', () => { this.opts.onTextBlur && this.opts.onTextBlur(wrap); });
+    body.addEventListener('input', () => { this.onTextInput(body, t); this.flowOverflow(pv); });
+    body.addEventListener('keydown', e => this.onTextKey(e, body, pv, t, wrap));
+    body.addEventListener('paste', e => {
+      e.preventDefault();
+      document.execCommand('insertText', false, e.clipboardData.getData('text/plain'));
+    });
+    body.addEventListener('click', e => { if (e.target.classList.contains('cb')) this.toggleCheckbox(e.target); });
+    pv.textSheet.prepend(wrap);
+  }
+
+  /** Unterkante von Haupttext, Handschrift und Textfeldern (logische Einheiten). */
+  contentBottom(pv) {
+    let maxY = 0;
+    const body = pv.mainWrap._body;
+    const s = pv.s || 1;
+    const top = pv.el.getBoundingClientRect().top;
+    // letzte nicht-leere Zeile des Haupttexts
+    const blocks = [...body.childNodes];
+    for (let i = blocks.length - 1; i >= 0; i--) {
+      const n = blocks[i];
+      if (!(n.textContent || '').trim() && !(n.querySelector && n.querySelector('.cb'))) continue;
+      const r = n.nodeType === 1 ? n.getBoundingClientRect() : (() => { const rg = document.createRange(); rg.selectNode(n); return rg.getBoundingClientRect(); })();
+      maxY = Math.max(maxY, (r.bottom - top) / s);
+      break;
+    }
+    for (const st of pv.data.strokes) for (const p of st.points) maxY = Math.max(maxY, p[1] + st.width);
+    for (const wrap of pv.textSheet.querySelectorAll('.tb:not(.main)')) maxY = Math.max(maxY, wrap._t.y + wrap.offsetHeight);
+    return maxY;
+  }
+
+  /**
+   * Cursor an den Anfang einer Zeile im Haupttext setzen (wie Klicken-und-Eingeben in Word).
+   * Liegt die Zeile unter dem bisherigen Text, werden leere Zeilen bis dorthin eingefügt.
+   */
+  placeKeyboardCaret(pv, y, ev) {
+    if (this.readOnly) return;
+    const wrap = pv.mainWrap, body = wrap._body;
+    const st = this.textStyleOf({});
+    const step = LINE * (st.spacing || 1) + (st.para || 0) * LINE;
+    const empty = !body.textContent.trim() && !body.querySelector('.cb') && !body.querySelector('li');
+    const used = empty ? 0 : this.mainUsed(pv);
+    const ps = (st.para || 0) * LINE;
+    const want = Math.max(0, y - MAIN_TOP);
+    body.focus({ preventScroll: true });
+    if (!empty && want < used) {
+      if (ev && ev.clientX != null) {
+        // innerhalb des vorhandenen Texts: dorthin, wo getippt wurde
+        placeCaretAtPoint(ev.clientX, ev.clientY);
+        this.opts.onTextFocus && this.opts.onTextFocus(wrap);
+        return;
+      }
+      // Tastatur eingeschaltet: vorhandene leere Zeile am Ende nutzen, sonst neue Zeile anhängen
+      let reuse = null;
+      for (let n = body.lastElementChild; n && !(n.textContent || '').trim() && !n.querySelector('.cb, li'); n = n.previousElementSibling) {
+        if (n.offsetTop + 2 >= want) reuse = n;
+      }
+      const target = reuse || body.appendChild(Object.assign(document.createElement('div'), { innerHTML: '<br>' }));
+      const r = document.createRange();
+      r.setStart(target, 0); r.collapse(true);
+      const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+      this.syncMain(pv);
+      this.flowOverflow(pv);
+      target.scrollIntoView({ block: 'nearest' });
+      this.opts.onTextFocus && this.opts.onTextFocus(wrap);
+      return;
+    }
+    // Leere Zeilen bis zur angetippten Linie auffüllen (wie „Klicken und Eingeben“ in Word)
+    const blanks = Math.max(0, Math.floor((want - used - (empty ? 0 : ps)) / step));
+    if (empty) { body.innerHTML = ''; }
+    let target = null;
+    for (let i = 0; i <= blanks; i++) {
+      const d = document.createElement('div');
+      d.appendChild(document.createElement('br'));
+      body.appendChild(d);
+      target = d;
+    }
+    // Seitenende erreicht? → nächste Seite
+    if (MAIN_TOP + body.offsetHeight > pv.data.h - MAIN_BOTTOM) {
+      while (body.lastChild && body.lastChild !== target && !(body.lastChild.textContent || '').trim()) body.lastChild.remove();
+      if (target && target.parentNode) target.remove();
+      this.syncMain(pv);
+      const next = this.pages[this.pages.indexOf(pv) + 1] || this.addPage(false);
+      this.focusKeyboard(next);
+      return;
+    }
+    const r = document.createRange();
+    r.setStart(target, 0); r.collapse(true);
+    const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    this.syncMain(pv);
+    target.scrollIntoView({ block: 'nearest' });
+    this.opts.onTextFocus && this.opts.onTextFocus(wrap);
+  }
+
+  /** Unterkante der letzten (auch leeren) Zeile des Haupttexts, relativ zum Textanfang. */
+  mainUsed(pv) {
+    const body = pv.mainWrap._body;
+    const last = body.lastChild;
+    if (!last) return 0;
+    let r;
+    if (last.nodeType === 1) r = last.getBoundingClientRect();
+    else { const rg = document.createRange(); rg.selectNode(last); r = rg.getBoundingClientRect(); }
+    return (r.bottom - body.getBoundingClientRect().top) / (pv.s || 1);
+  }
+
+  /** In den Tastatur-Modus: Cursor auf den Anfang der nächsten freien Zeile der aktuellen Seite. */
+  focusKeyboard(pv = this.visiblePage()) {
+    if (!pv || this.readOnly) return;
+    const bottom = this.contentBottom(pv);
+    let y = bottom ? Math.ceil(bottom / LINE) * LINE + 1 : MAIN_TOP + 1;
+    y = Math.max(y, MAIN_TOP + 1);
+    if (y > pv.data.h - MAIN_BOTTOM - LINE) {
+      pv = this.pages[this.pages.indexOf(pv) + 1] || this.addPage(false);
+      y = MAIN_TOP + 1;
+    }
+    this.placeKeyboardCaret(pv, y);
+  }
+
+  syncMain(pv) {
+    pv.data.main.html = pv.mainWrap._body.innerHTML;
+    this.changed();
+  }
+
+  /** Läuft der Haupttext über das Seitenende, wandern die letzten Absätze auf die nächste Seite. */
+  flowOverflow(pv) {
+    const body = pv.mainWrap._body;
+    const maxH = pv.data.h - MAIN_TOP - MAIN_BOTTOM;
+    if (body.offsetHeight <= maxH || body.childNodes.length < 2) return;
+    const sel = window.getSelection();
+    const caretNode = sel.rangeCount ? sel.anchorNode : null;
+    const caretOff = sel.rangeCount ? sel.anchorOffset : 0;
+    const moved = [];
+    while (body.offsetHeight > maxH && body.childNodes.length > 1) {
+      const last = body.lastChild;
+      last.remove();
+      if (last.nodeType === 3) { const d = document.createElement('div'); d.appendChild(last); moved.unshift(d); }
+      else moved.unshift(last);
+    }
+    if (!moved.length) return;
+    const next = this.pages[this.pages.indexOf(pv) + 1] || this.addPage(false);
+    const nb = next.mainWrap._body;
+    const nEmpty = !nb.textContent.trim() && !nb.querySelector('.cb');
+    if (nEmpty) nb.innerHTML = '';
+    nb.prepend(...moved);
+    this.syncMain(pv);
+    this.syncMain(next);
+    if (caretNode && nb.contains(caretNode)) {
+      nb.focus({ preventScroll: true });
+      const r = document.createRange();
+      try { r.setStart(caretNode, Math.min(caretOff, caretNode.length ?? caretNode.childNodes.length)); } catch { r.selectNodeContents(nb); r.collapse(false); }
+      r.collapse(true);
+      sel.removeAllRanges(); sel.addRange(r);
+      (caretNode.nodeType === 1 ? caretNode : caretNode.parentElement).scrollIntoView({ block: 'nearest' });
+    }
+    this.flowOverflow(next);
+  }
+
+  /** Einzug eines normalen Absatzes (außerhalb von Listen) ändern – wie „Einzug vergrößern“ in Word. */
+  indentBlock(body, dir) {
+    const sel = window.getSelection();
+    if (!sel.rangeCount) return;
+    let n = sel.anchorNode;
+    if (n === body) n = body.childNodes[sel.anchorOffset] || body.lastChild;
+    while (n && n.parentNode !== body) n = n.parentNode;
+    if (!n) return;
+    if (n.nodeType === 3) { const d = document.createElement('div'); n.replaceWith(d); d.appendChild(n); n = d; }
+    const cur = parseFloat(n.style.marginLeft) || 0;
+    const v = Math.max(0, Math.min(TAB * 8, cur + dir * TAB));
+    n.style.marginLeft = v ? v + 'px' : '';
   }
 
   restyleText() {
@@ -774,8 +1022,44 @@ export class Editor {
     this.changed();
   }
 
-  onTextKey(e, body, pv, t) {
-    if (e.key === 'Escape') { e.preventDefault(); body.blur(); return; }
+  onTextKey(e, body, pv, t, wrap) {
+    const mod = e.ctrlKey || e.metaKey;
+    const key = e.key.toLowerCase();
+    const done = () => { e.preventDefault(); t.html = body.innerHTML; this.changed(); if (wrap && wrap._main) this.flowOverflow(pv); this.opts.onFormatChange && this.opts.onFormatChange(); };
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); body.blur(); return; }
+    // Tab wie in Word: in Listen eine Ebene tiefer/höher, sonst Tabstopp bzw. Einzug
+    if (e.key === 'Tab' && !mod && !e.altKey) {
+      const sel = window.getSelection();
+      const node = sel.anchorNode && (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement);
+      const li = node && node.closest('li');
+      if (li && body.contains(li)) document.execCommand(e.shiftKey ? 'outdent' : 'indent');
+      else if (e.shiftKey) this.indentBlock(body, -1);
+      else document.execCommand('insertText', false, '\t');
+      done(); e.stopPropagation(); return;
+    }
+    if (mod && !e.altKey) {
+      const cmds = { l: 'justifyLeft', e: 'justifyCenter', r: 'justifyRight', j: 'justifyFull' };
+      if (!e.shiftKey && cmds[key]) { document.execCommand('styleWithCSS', false, true); document.execCommand(cmds[key]); done(); e.stopPropagation(); return; }
+      if (!e.shiftKey && ['1', '2', '3'].includes(e.key)) {   // Zeilenabstand wie Strg+1/2 in Word
+        e.preventDefault(); e.stopPropagation();
+        this.applyBoxStyle(wrap || body.closest('.tb'), { spacing: +e.key });
+        this.opts.onFormatChange && this.opts.onFormatChange();
+        return;
+      }
+      if (e.shiftKey && key === 'l') { document.execCommand('insertUnorderedList'); done(); e.stopPropagation(); return; }
+      if (e.shiftKey && key === 'n') { document.execCommand('formatBlock', false, 'div'); done(); e.stopPropagation(); return; }
+      if (e.shiftKey && (e.key === '>' || e.key === '<')) {
+        e.preventDefault(); e.stopPropagation();
+        const w = wrap || body.closest('.tb');
+        const cur = (w._main ? this.textStyleOf({}) : this.textStyleOf(w._t)).size;
+        this.applyBoxStyle(w, { size: Math.max(16, Math.min(34, cur + (e.key === '>' ? 2 : -2))) });
+        this.opts.onFormatChange && this.opts.onFormatChange();
+        return;
+      }
+    }
+    if (mod && e.altKey && ['1', '2', '3'].includes(e.key)) {    // Überschriften wie Strg+Alt+1/2 in Word
+      document.execCommand('formatBlock', false, ['h2', 'h3', 'div'][+e.key - 1]); done(); e.stopPropagation(); return;
+    }
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'h') {
       e.preventDefault();
       wrapSelection('mark');
@@ -825,28 +1109,14 @@ export class Editor {
     this.changed();
   }
 
-  /** Tastatur: Wo soll ein neues Textfeld entstehen, wenn man einfach lostippt? */
+  /** Einfach lostippen: in den Haupttext an den Anfang der nächsten freien (oder angetippten) Zeile. */
   typeAnywhere(char) {
     if (!this.note || this.readOnly) return false;
-    let pv, x, y;
-    if (this.lastPointer && this.pages.includes(this.lastPointer.pv)) {
-      ({ pv, x, y } = this.lastPointer);
-    } else {
-      pv = this.visiblePage();
-      let maxY = 0;
-      for (const st of pv.data.strokes) for (const p of st.points) maxY = Math.max(maxY, p[1]);
-      for (const wrap of pv.textSheet.querySelectorAll('.tb')) maxY = Math.max(maxY, wrap._t.y + wrap.offsetHeight);
-      x = 96; y = maxY ? Math.ceil(maxY / LINE) * LINE + 1 : LINE * 3 + 1;
-      if (y > pv.data.h - LINE * 2) {
-        const idx = this.pages.indexOf(pv);
-        pv = this.pages[idx + 1] || this.addPage(false);
-        y = LINE * 3 + 1;
-      }
-    }
-    const body = this.createTextBox(pv, x, y, true);
-    caretToEnd(body);
+    this.opts.onKeyboardMode && this.opts.onKeyboardMode();
+    if (this.lastPointer && this.pages.includes(this.lastPointer.pv)) this.placeKeyboardCaret(this.lastPointer.pv, this.lastPointer.y);
+    else this.focusKeyboard();
+    this.lastPointer = null;
     if (char) document.execCommand('insertText', false, char);
-    body.scrollIntoView({ block: 'nearest' });
     return true;
   }
 

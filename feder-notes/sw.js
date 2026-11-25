@@ -1,5 +1,5 @@
 // Offline-Fähigkeit: App-Dateien und mitgelieferte Bibliotheken werden zwischengespeichert.
-const VERSION = 'feder-v4';
+const VERSION = 'feder-v5';
 const SHELL = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest', 'icons/icon.svg',
   'js/app.js', 'js/db.js', 'js/editor.js', 'js/import.js', 'js/sync.js', 'js/sanitize.js', 'js/transport.js', 'js/nextcloud.js',

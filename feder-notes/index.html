@@ -46,6 +46,11 @@
     <symbol id="i-cbox" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M8 12.5l2.7 2.7L16 9.5"/></symbol>
     <symbol id="i-clear" viewBox="0 0 24 24"><path d="M6 5h12M12 5l-3 14M4 20l16-16"/></symbol>
     <symbol id="i-page" viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2.5"/><path d="M9 8h6M9 12h6"/></symbol>
+    <symbol id="i-keyboard" viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6 9.5h.01M9.3 9.5h.01M12.6 9.5h.01M15.9 9.5h.01M18 9.5h.01M6 12.5h.01M9.3 12.5h.01M12.6 12.5h.01M15.9 12.5h.01M18 12.5h.01M8 15.3h8"/></symbol>
+    <symbol id="i-textbox" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="2.5" stroke-dasharray="2.4 2"/><path d="M8.5 9h7M12 9v7"/></symbol>
+    <symbol id="i-indent" viewBox="0 0 24 24"><path d="M10 6h10M10 10h10M10 14h10M4 18h16M4 8.5l3 2-3 2"/></symbol>
+    <symbol id="i-outdent" viewBox="0 0 24 24"><path d="M10 6h10M10 10h10M10 14h10M4 18h16M7 8.5l-3 2 3 2"/></symbol>
+    <symbol id="i-para" viewBox="0 0 24 24"><path d="M14 4v16M18 4v16M18 4h-7.5a4 4 0 000 8H14"/></symbol>
     <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
   </defs>
 </svg>
@@ -103,37 +108,43 @@
 
     <div id="toolbar" role="toolbar">
       <div class="tools">
-        <button class="tool" data-tool="text" title="Text (Alt+5) – oder einfach lostippen"><svg><use href="#i-text"/></svg></button>
+        <button class="tool" data-tool="keyboard" title="Tastatur (Alt+5): schreibt ab dem Zeilenanfang – oder einfach lostippen"><svg><use href="#i-keyboard"/></svg></button>
         <button class="tool" data-tool="pen" title="Stift (Alt+1) – nochmal tippen für Stiftart &amp; Stärke"><svg><use href="#i-fountain"/></svg></button>
         <button class="tool" data-tool="highlighter" title="Textmarker (Alt+2)"><svg><use href="#i-marker"/></svg></button>
         <button class="tool" data-tool="eraser" title="Radierer (Alt+3) – auch S-Pen-Taste"><svg><use href="#i-eraser"/></svg></button>
         <button class="tool" data-tool="lasso" title="Auswählen (Alt+4)"><svg><use href="#i-lasso"/></svg></button>
+        <button class="tool" data-tool="text" title="Freies Textfeld (Alt+6): antippen, wo es hin soll"><svg><use href="#i-textbox"/></svg></button>
       </div>
       <span class="tb-sep"></span>
       <div id="colors" class="colors" title="Farbe – aktive Farbe nochmal tippen zum Ändern"></div>
     </div>
 
     <div id="formatbar" role="toolbar" aria-label="Textformat" hidden>
-      <select id="fmt-font" class="fmt-select" title="Schriftart (gilt für dieses Textfeld)"></select>
-      <select id="fmt-size" class="fmt-select narrow" title="Schriftgröße (gilt für dieses Textfeld)"></select>
+      <select id="fmt-block" class="fmt-select" title="Formatvorlage">
+        <option value="div">Standard</option><option value="h2">Überschrift 1</option><option value="h3">Überschrift 2</option>
+      </select>
+      <select id="fmt-font" class="fmt-select" title="Schriftart"></select>
+      <select id="fmt-size" class="fmt-select narrow" title="Schriftgröße (Strg+Umschalt+&lt; / &gt;)"></select>
       <span class="tb-sep"></span>
       <button class="fmt" data-cmd="bold" title="Fett (Strg+B)"><b>F</b></button>
       <button class="fmt" data-cmd="italic" title="Kursiv (Strg+I)"><i>K</i></button>
       <button class="fmt" data-cmd="underline" title="Unterstrichen (Strg+U)"><u>U</u></button>
       <button class="fmt" data-cmd="strikeThrough" title="Durchgestrichen"><s>S</s></button>
-      <button class="fmt color" data-cmd="foreColor" title="Textfarbe für markierten Text"><span>A</span><i id="fmt-color-bar"></i></button>
+      <button class="fmt color" data-cmd="foreColor" title="Textfarbe"><span>A</span><i id="fmt-color-bar"></i></button>
       <button class="fmt" data-cmd="mark" title="Markieren (Strg+Umschalt+H)"><svg><use href="#i-marker"/></svg></button>
       <span class="tb-sep"></span>
-      <button class="fmt" data-cmd="justifyLeft" title="Linksbündig"><svg><use href="#i-al"/></svg></button>
-      <button class="fmt" data-cmd="justifyCenter" title="Zentriert"><svg><use href="#i-ac"/></svg></button>
-      <button class="fmt" data-cmd="justifyRight" title="Rechtsbündig"><svg><use href="#i-ar"/></svg></button>
+      <button class="fmt" data-cmd="justifyLeft" title="Linksbündig (Strg+L)"><svg><use href="#i-al"/></svg></button>
+      <button class="fmt" data-cmd="justifyCenter" title="Zentriert (Strg+E)"><svg><use href="#i-ac"/></svg></button>
+      <button class="fmt" data-cmd="justifyRight" title="Rechtsbündig (Strg+R)"><svg><use href="#i-ar"/></svg></button>
       <span class="tb-sep"></span>
-      <button class="fmt" data-cmd="insertUnorderedList" title="Aufzählung (oder „- “ tippen)"><svg><use href="#i-ul"/></svg></button>
-      <button class="fmt" data-cmd="insertOrderedList" title="Nummerierung (oder „1. “ tippen)"><svg><use href="#i-ol"/></svg></button>
-      <button class="fmt" data-cmd="checkbox" title="Checkbox (oder „[] “ tippen)"><svg><use href="#i-cbox"/></svg></button>
-      <select id="fmt-spacing" class="fmt-select narrow" title="Zeilenabstand (gilt für dieses Textfeld)">
-        <option value="1">1 Zeile</option><option value="2">2 Zeilen</option>
-      </select>
+      <button class="fmt" data-cmd="insertUnorderedList" title="Aufzählung (Strg+Umschalt+L oder „- “)"><svg><use href="#i-ul"/></svg></button>
+      <button class="fmt" data-cmd="insertOrderedList" title="Nummerierung (oder „1. “)"><svg><use href="#i-ol"/></svg></button>
+      <button class="fmt" data-cmd="checkbox" title="Checkbox (oder „[] “)"><svg><use href="#i-cbox"/></svg></button>
+      <button class="fmt" data-cmd="outdent" title="Einzug verkleinern (Umschalt+Tab)"><svg><use href="#i-outdent"/></svg></button>
+      <button class="fmt" data-cmd="indent" title="Einzug vergrößern (Tab)"><svg><use href="#i-indent"/></svg></button>
+      <span class="tb-sep"></span>
+      <button class="fmt wide" data-cmd="para" title="Absatz: Zeilenabstand, Abstand nach Absatz, Einzug bei Aufzählungen"><svg><use href="#i-para"/></svg>Absatz</button>
+      <button class="fmt wide only-box" data-cmd="box" title="Textfeld: Rahmen, Hintergrund, löschen"><svg><use href="#i-textbox"/></svg>Feld</button>
       <button class="fmt" data-cmd="removeFormat" title="Formatierung entfernen"><svg><use href="#i-clear"/></svg></button>
     </div>
 
@@ -199,7 +210,9 @@
     <div class="paper-pick" id="def-paper"></div>
     <div class="set-row">Schriftart <select id="def-font"></select></div>
     <div class="set-row">Schriftgröße <select id="def-size"></select></div>
-    <div class="set-row">Zeilenabstand <select id="def-spacing"><option value="1">1 Zeile</option><option value="2">2 Zeilen</option></select></div>
+    <div class="set-row">Zeilenabstand <select id="def-spacing"><option value="1">1 Zeile</option><option value="2">2 Zeilen</option><option value="3">3 Zeilen</option></select></div>
+    <div class="set-row">Abstand nach Absatz <select id="def-para"><option value="0">Keiner</option><option value="1">1 Zeile</option></select></div>
+    <div class="set-row">Einzug bei Aufzählungen <select id="def-indent"><option value="24">Klein</option><option value="40">Mittel</option><option value="64">Groß</option><option value="96">Sehr groß</option></select></div>
     <div class="set-row">Textfarbe <div class="mini-palette" id="def-color"></div></div>
 
     <h3 class="sec">Bedienung</h3>
@@ -240,7 +253,9 @@
     <h3 class="sec">Text in dieser Notiz</h3>
     <div class="set-row">Schriftart <select id="note-font"></select></div>
     <div class="set-row">Schriftgröße <select id="note-size"></select></div>
-    <div class="set-row">Zeilenabstand <select id="note-spacing"><option value="1">1 Zeile</option><option value="2">2 Zeilen</option></select></div>
+    <div class="set-row">Zeilenabstand <select id="note-spacing"><option value="1">1 Zeile</option><option value="2">2 Zeilen</option><option value="3">3 Zeilen</option></select></div>
+    <div class="set-row">Abstand nach Absatz <select id="note-para"><option value="0">Keiner</option><option value="1">1 Zeile</option></select></div>
+    <div class="set-row">Einzug bei Aufzählungen <select id="note-indent"><option value="24">Klein</option><option value="40">Mittel</option><option value="64">Groß</option><option value="96">Sehr groß</option></select></div>
     <div class="set-row">Textfarbe <div class="mini-palette" id="note-color"></div></div>
     <div class="sample paper-lined" id="note-sample"><span>Beispieltext – sitzt auf der Linie</span></div>
     <div class="row">
@@ -284,10 +299,15 @@
       <tr><td><kbd>Strg</kbd>+<kbd>F</kbd></td><td>Suchen</td></tr>
       <tr><td><kbd>Strg</kbd>+<kbd>S</kbd></td><td>Synchronisieren</td></tr>
       <tr><td><kbd>Strg</kbd>+<kbd>Z</kbd> / <kbd>Y</kbd></td><td>Rückgängig / Wiederholen</td></tr>
-      <tr><td><kbd>Alt</kbd>+<kbd>1</kbd>…<kbd>5</kbd></td><td>Stift, Marker, Radierer, Auswahl, Text</td></tr>
+      <tr><td><kbd>Alt</kbd>+<kbd>1</kbd>…<kbd>6</kbd></td><td>Stift, Marker, Radierer, Auswahl, Tastatur, Textfeld</td></tr>
+      <tr><td><kbd>Tab</kbd> / <kbd>Umschalt</kbd>+<kbd>Tab</kbd></td><td>Tabstopp bzw. Aufzählung eine Ebene tiefer / höher</td></tr>
+      <tr><td><kbd>Strg</kbd>+<kbd>L</kbd>/<kbd>E</kbd>/<kbd>R</kbd></td><td>Links / zentriert / rechts</td></tr>
+      <tr><td><kbd>Strg</kbd>+<kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd></td><td>Zeilenabstand 1, 2 oder 3 Zeilen</td></tr>
+      <tr><td><kbd>Strg</kbd>+<kbd>Alt</kbd>+<kbd>1</kbd>/<kbd>2</kbd></td><td>Überschrift 1 / 2 (<kbd>Strg</kbd>+<kbd>Umschalt</kbd>+<kbd>N</kbd> = Standard)</td></tr>
+      <tr><td><kbd>Strg</kbd>+<kbd>Umschalt</kbd>+<kbd>L</kbd></td><td>Aufzählung</td></tr>
+      <tr><td><kbd>Strg</kbd>+<kbd>Umschalt</kbd>+<kbd>&lt;</kbd>/<kbd>&gt;</kbd></td><td>Schrift kleiner / größer</td></tr>
       <tr><td><kbd>Alt</kbd>+<kbd>Q</kbd>/<kbd>W</kbd></td><td>Vorherige / nächste Farbe</td></tr>
       <tr><td><kbd>Strg</kbd>+<kbd>Umschalt</kbd>+<kbd>Enter</kbd></td><td>Neue Seite</td></tr>
-      <tr><td><kbd>Strg</kbd>+<kbd>Enter</kbd> (im Text)</td><td>Neues Textfeld darunter</td></tr>
       <tr><td><kbd>Strg</kbd>+<kbd>B</kbd>/<kbd>I</kbd>/<kbd>U</kbd></td><td>Fett / Kursiv / Unterstrichen</td></tr>
       <tr><td><kbd>Strg</kbd>+<kbd>Umschalt</kbd>+<kbd>H</kbd></td><td>Text markieren</td></tr>
       <tr><td><code>- </code> <code>1. </code> <code># </code> <code>[] </code></td><td>Liste, Nummerierung, Überschrift, Checkbox</td></tr>
