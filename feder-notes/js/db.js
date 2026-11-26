@@ -54,3 +54,8 @@ export function uid() {
   crypto.getRandomValues(b);
   return Array.from(b, x => x.toString(16).padStart(2, '0')).join('').replace(/^(.{8})(.{4})(.{4})(.{4})/, '$1-$2-$3-$4-');
 }
+
+/** Alle Dateien (PDF-Seiten, Bilder, Sprachaufnahmen), die eine Seite benutzt. */
+export function pageAssets(p) {
+  return [p.bg && p.bg.asset, ...(p.images || []).map(i => i.asset), ...(p.audios || []).map(a => a.asset)].filter(Boolean);
+}

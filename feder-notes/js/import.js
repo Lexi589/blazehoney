@@ -1,5 +1,5 @@
 // Import von PDF, Samsung Notes (.sdocx), Bildern, Text und Feder-Backups.
-import { db, uid } from './db.js';
+import { db, uid, pageAssets } from './db.js';
 import { PAGE_W, A4_H, newPage } from './editor.js';
 import { textToHTML } from './sanitize.js';
 
@@ -238,7 +238,7 @@ async function extractText(bytes) {
 
 export async function exportBackup(notes) {
   const assetIds = new Set();
-  notes.forEach(n => n.pages.forEach(p => p.bg && p.bg.asset && assetIds.add(p.bg.asset)));
+  notes.forEach(n => n.pages.forEach(p => pageAssets(p).forEach(id => assetIds.add(id))));
   const assets = [];
   for (const id of assetIds) {
     const a = await db.getAsset(id);

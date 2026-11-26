@@ -8,6 +8,10 @@ import { fileURLToPath } from 'node:url';
 const file = join(dirname(fileURLToPath(import.meta.url)), '..', 'android', 'app', 'src', 'main', 'AndroidManifest.xml');
 let xml = readFileSync(file, 'utf8');
 if (!xml.includes('usesCleartextTraffic')) xml = xml.replace('<application', '<application\n        android:usesCleartextTraffic="true"');
+// Mikrofon (Sprachaufnahme) und Kamera (Foto einfügen)
+for (const perm of ['android.permission.RECORD_AUDIO', 'android.permission.MODIFY_AUDIO_SETTINGS', 'android.permission.CAMERA']) {
+  if (!xml.includes(perm)) xml = xml.replace('</manifest>', `    <uses-permission android:name="${perm}" />\n</manifest>`);
+}
 if (!xml.includes('windowSoftInputMode')) xml = xml.replace('android:name=".MainActivity"', 'android:name=".MainActivity"\n            android:windowSoftInputMode="adjustResize"');
 writeFileSync(file, xml);
 console.log('AndroidManifest angepasst');

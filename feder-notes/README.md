@@ -70,6 +70,56 @@ Wird dieselbe Notiz auf zwei Geräten gleichzeitig geändert, bleiben beide Vers
 - **Finger:** Ein Finger scrollt, zwei Finger zoomen. Ist unter ⋯ „Mit dem Finger zeichnen“ an, zeichnet ein Finger, und mit zwei Fingern scrollst und zoomst du.
 - Die **Zurück-Taste** von Android führt vom Editor zur Übersicht.
 
+## Wie bei Samsung Notes
+
+**Formen:** Zeichne einen Strich und **halte den Stift am Ende kurz still**. Der Strich wird dann zu einer exakten Form:
+- gerade Linie (rastet bei 0°/45°/90° ein)
+- Pfeil
+- Kreis oder Ellipse
+- Rechteck
+- Dreieck
+
+Ausschalten kannst du das unter ⚙ → „Formen erkennen“.
+
+**Lasso:** Umkreise Striche, Bilder oder Sprachaufnahmen. Danach kannst du:
+- am Rahmen verschieben
+- an den Ecken skalieren
+- am runden Griff oben drehen (rastet bei 90° ein)
+
+Die Leiste darüber bietet:
+
+| Knopf | Wirkung |
+|---|---|
+| Stil | Stärke und Farbe ändern |
+| Kopieren, Ausschneiden, Duplizieren | auch über <kbd>Strg</kbd>+<kbd>C</kbd>/<kbd>X</kbd>/<kbd>D</kbd>, Einfügen mit <kbd>Strg</kbd>+<kbd>V</kbd> |
+| Nach vorne / Nach hinten | Ebene ändern |
+| Löschen | Auswahl entfernen |
+
+**Drei Strichstärken** direkt in der Werkzeugleiste (dünn, mittel, dick), wie bei Samsung.
+
+**Einfügen (+):**
+
+| Eintrag | Was passiert |
+|---|---|
+| PDF / Bild als Seite | wird als neue Seite eingefügt |
+| Sprachaufnahme | erscheint als ▶-Knopf auf der Seite |
+| Bild, Kamera | frei verschieb- und skalierbar |
+| Haftnotiz | gelbe Notiz |
+| Tabelle | <kbd>Tab</kbd> springt zur nächsten Zelle; in der letzten Zelle entsteht eine neue Zeile, wie in Word. „+ Zeile/Spalte“ in der Formatleiste. |
+| Neue Seite | leere Seite anhängen |
+
+**Notizstil (⋯):**
+- Papier: liniert, kariert, Punkte, blanko
+- Papierfarbe: Weiß, Creme, Grau, Dunkel. Auf dunklem Papier wird schwarze Tinte automatisch weiß angezeigt.
+
+**Favoriten:** Über ⋯ → „Zu Favoriten“ markierst du eine Notiz. Alle Favoriten findest du in der Ordnerleiste.
+
+Noch nicht enthalten sind:
+- Handschrift → Text bzw. Formel umwandeln (braucht eine Schrifterkennung)
+- Handschrift ausrichten
+- Zusammenarbeiten, Tags, Sperren
+- Dokumentenscan, Doppelseiten-Ansicht
+
 ## Text schreiben – wie in Word, aber auf den Linien
 
 **Tastatur-Modus (⌨):**

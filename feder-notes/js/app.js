@@ -1,6 +1,6 @@
 import { db, uid } from './db.js';
-import { Editor, newPage, drawStroke, PAGE_W, FONTS, DEFAULT_TEXT } from './editor.js';
-import { importFileAsNote, fileToPages, exportBackup, readBackup } from './import.js';
+import { Editor, newPage, drawStroke, PAGE_W, FONTS, DEFAULT_TEXT, PAPER_COLORS, inkColor, tableRow, tableCol } from './editor.js';
+import { importFileAsNote, fileToPages, exportBackup, readBackup, storeAsset } from './import.js';
 import { Sync } from './sync.js';
 import { escapeHTML } from './sanitize.js';
 import { platform } from './transport.js';
@@ -18,6 +18,9 @@ const KINDS = [
   ['fountain', 'Füller'], ['ball', 'Kuli'], ['pencil', 'Bleistift'], ['calli', 'Kalligrafie'],
 ];
 const TOOLS = ['pen', 'highlighter', 'eraser', 'lasso', 'keyboard', 'text'];
+const FAV = '__fav';
+// Drei schnelle Strichstärken wie bei Samsung Notes
+const WIDTH_PRESETS = { pen: [1.5, 2.5, 4.5], highlighter: [12, 22, 34], eraser: [10, 20, 40] };
 const wide = () => false;   // immer eine Ansicht: Übersicht ODER Notiz (auch am Tablet)
 const FONT_NAMES = { sans: 'Sans', serif: 'Serif', mono: 'Schreibmaschine', hand: 'Handschrift' };
 const SIZES = [16, 18, 20, 22, 24, 26, 28, 30, 32, 34];
@@ -49,11 +52,16 @@ async function getAssetURL(id) {
 
 /* ---------------- Editor ---------------- */
 let zoomTimer;
-const editor = new Editor($('#pages'), {
+const editor = window.__federEditor = new Editor($('#pages'), {
   getAssetURL,
   onChange: () => scheduleSave(),
   onHistory: (u, r) => { $('#btn-undo').disabled = !u; $('#btn-redo').disabled = !r; },
   onTextFocus: wrap => showFormatBar(wrap),
+  onShape: label => toast(label + ' ✓', 900),
+  onInfo: msg => toast(msg),
+  onWantLasso: () => { if (editor.tool !== 'lasso') { editor.tool = 'lasso'; $('#pages').dataset.tool = 'lasso'; renderToolbar(); } },
+  onSelectionStyle: anchor => openSelectionStyle(anchor),
+  onPlayAudio: (au, el) => playAudio(au, el),
   onKeyboardMode: () => { if (editor.tool !== 'keyboard') { editor.tool = 'keyboard'; $('#pages').dataset.tool = 'keyboard'; renderToolbar(); savePrefs(); } },
   onFormatChange: () => { const w = editor.focusedBox; if (w) showFormatBar(w); },
   onTextBlur: () => setTimeout(() => { if (!editor.focusedBox && !formatBarBusy) $('#formatbar').hidden = true; }, 150),
@@ -118,7 +126,8 @@ async function makeThumb(n) {
   const c = document.createElement('canvas');
   c.width = W; c.height = H;
   const ctx = c.getContext('2d');
-  ctx.fillStyle = '#fffefb'; ctx.fillRect(0, 0, W, H);
+  const pc = PAPER_COLORS[n.paperColor || 'white'] || PAPER_COLORS.white;
+  ctx.fillStyle = pc.bg; ctx.fillRect(0, 0, W, H);
   const page = n.pages[0];
   if (!page) return c.toDataURL('image/jpeg', 0.72);
   if (page.bg && page.bg.asset) {
@@ -130,13 +139,20 @@ async function makeThumb(n) {
       if (img.naturalWidth) ctx.drawImage(img, 0, 0, W, page.h * s);
     }
   } else if ((n.paper || 'lined') !== 'blank') {
-    ctx.strokeStyle = '#dbe3ef'; ctx.lineWidth = 1;
+    ctx.strokeStyle = pc.line; ctx.lineWidth = 1;
     for (let y = 80; y < page.h; y += 40) { ctx.beginPath(); ctx.moveTo(0, y * s); ctx.lineTo(W, y * s); ctx.stroke(); }
   }
   ctx.save();
   ctx.scale(s, s);
-  for (const st of page.strokes) drawStroke(ctx, st);
-  ctx.fillStyle = '#1d1d1f';
+  for (const im of page.images || []) {
+    const url = await getAssetURL(im.asset);
+    if (!url) continue;
+    const img = new Image(); img.src = url;
+    await img.decode().catch(() => {});
+    if (img.naturalWidth) ctx.drawImage(img, im.x, im.y, im.w, im.h);
+  }
+  for (const st of page.strokes) drawStroke(ctx, st, pc.dark);
+  ctx.fillStyle = inkColor('#1d1d1f', pc.dark);
   ctx.font = '24px sans-serif';
   const div = document.createElement('div');
   for (const t of [page.main && { ...page.main, x: 96, y: 80, w: 864 }, ...page.texts].filter(Boolean)) {
@@ -165,7 +181,7 @@ function visibleNotes() {
   return state.notes
     .filter(n => !n.purged)
     .filter(n => state.folder === TRASH ? n.deleted : !n.deleted)
-    .filter(n => state.folder === ALL || state.folder === TRASH || n.folder === state.folder)
+    .filter(n => state.folder === ALL || state.folder === TRASH || (state.folder === FAV ? n.fav : n.folder === state.folder))
     .filter(n => !q || searchText(n).toLowerCase().includes(q))
     .sort((a, b) => b.updatedAt - a.updatedAt);
 }
@@ -194,10 +210,10 @@ function folders() {
 
 async function createNote() {
   await flushSave();
-  const folder = state.folder !== ALL && state.folder !== TRASH ? state.folder : '';
+  const folder = state.folder !== ALL && state.folder !== TRASH && state.folder !== FAV ? state.folder : '';
   const now = Date.now();
   const note = {
-    id: uid(), title: '', folder, paper: state.defaults.paper, textStyle: { ...state.defaults.text },
+    id: uid(), title: '', folder, paper: state.defaults.paper, paperColor: state.defaults.paperColor || 'white', textStyle: { ...state.defaults.text },
     pages: [newPage()], createdAt: now, updatedAt: now, deleted: false, dirty: true,
   };
   state.notes.push(note);
@@ -276,7 +292,7 @@ function closeSearch() {
 /* ---------------- Übersicht zeichnen ---------------- */
 function renderHome() {
   renderFolders();
-  const title = state.folder === ALL ? 'Alle Notizen' : state.folder === TRASH ? 'Papierkorb' : state.folder;
+  const title = state.folder === ALL ? 'Alle Notizen' : state.folder === TRASH ? 'Papierkorb' : state.folder === FAV ? 'Favoriten' : state.folder;
   $('#folder-title').textContent = title;
   const notes = visibleNotes();
   $('#note-count').textContent = `${notes.length} ${notes.length === 1 ? 'Notiz' : 'Notizen'}`;
@@ -305,7 +321,7 @@ function renderHome() {
       if (i >= 0) extra = `<div class="m">${hl((i > 20 ? '…' : '') + body.slice(Math.max(0, i - 20), i + 40))}</div>`;
     }
     card.innerHTML = `<div class="thumb">${thumb}</div>
-      <div class="t">${hl(n.title || 'Unbenannt')}</div>
+      <div class="t">${n.fav ? '<span class="up">★</span> ' : ''}${hl(n.title || 'Unbenannt')}</div>
       <div class="m"><span>${date}</span>${n.folder && state.folder === ALL ? `<span>· ${escapeHTML(n.folder)}</span>` : ''}${n.dirty && sync.configured ? '<span class="up" title="noch nicht synchronisiert">↑</span>' : ''}</div>${extra}`;
     card.onclick = () => openNote(n);
     grid.appendChild(card);
@@ -323,7 +339,8 @@ function renderFolders() {
     all++;
     counts[n.folder] = (counts[n.folder] || 0) + 1;
   }
-  const items = [[ALL, 'Alle Notizen', all, 'i-notes'], ...folders().map(f => [f, f, counts[f] || 0, 'i-folder'])];
+  const favs = state.notes.filter(n => n.fav && !n.deleted && !n.purged).length;
+  const items = [[ALL, 'Alle Notizen', all, 'i-notes'], [FAV, 'Favoriten', favs, 'i-star'], ...folders().map(f => [f, f, counts[f] || 0, 'i-folder'])];
   items.push([TRASH, 'Papierkorb', trash, 'i-trash']);
   const el = $('#folders');
   el.innerHTML = '';
@@ -399,6 +416,34 @@ function renderToolbar() {
     }
   });
   renderColors();
+  renderWidths();
+}
+
+function presetKey() {
+  return editor.tool === 'highlighter' ? 'highlighter' : editor.tool === 'eraser' ? 'eraser' : 'pen';
+}
+
+function renderWidths() {
+  const el = $('#widths');
+  const key = presetKey();
+  const cur = key === 'eraser' ? editor.eraser.width : editor.styles[key === 'pen' ? editor.penKind : 'highlighter'].width;
+  el.innerHTML = '';
+  WIDTH_PRESETS[key].forEach((w, i) => {
+    const b = document.createElement('button');
+    b.className = 'wbtn' + (Math.abs(w - cur) < 0.01 ? ' active' : '');
+    b.title = ['Dünn', 'Mittel', 'Dick'][i];
+    b.innerHTML = `<i style="height:${[2, 4, 7][i]}px"></i>`;
+    b.onclick = () => {
+      if (key === 'eraser') editor.eraser.width = w;
+      else {
+        if (editor.tool !== 'pen' && editor.tool !== 'highlighter') { editor.tool = 'pen'; $('#pages').dataset.tool = 'pen'; }
+        if (editor.selection) { editor.styleSelection({ width: w }); renderWidths(); return; }
+        editor.styles[key === 'pen' ? editor.penKind : 'highlighter'].width = w;
+      }
+      renderToolbar(); savePrefs();
+    };
+    el.appendChild(b);
+  });
 }
 
 /** Aktive Farbe = Farbe des aktuellen Stifts (Füller/Kuli/… oder Marker) */
@@ -793,6 +838,10 @@ document.addEventListener('keydown', e => {
   if (mod && k === 'z' && !e.shiftKey) { e.preventDefault(); editor.undo(); return; }
   if ((mod && k === 'y') || (mod && e.shiftKey && k === 'z')) { e.preventDefault(); editor.redo(); return; }
   if ((e.key === 'Delete' || e.key === 'Backspace') && editor.selection) { e.preventDefault(); editor.deleteSelection(); return; }
+  if (mod && k === 'c' && editor.selection) { e.preventDefault(); editor.copySelection(); toast('Kopiert'); return; }
+  if (mod && k === 'x' && editor.selection) { e.preventDefault(); editor.copySelection(); editor.deleteSelection(); return; }
+  if (mod && k === 'd' && editor.selection) { e.preventDefault(); editor.copySelection(); editor.paste(20); return; }
+  if (mod && k === 'v') { e.preventDefault(); editor.paste(20); return; }
   if (e.key === '?') { e.preventDefault(); $('#dlg-shortcuts').showModal(); return; }
   if (e.key === 'PageDown' || e.key === 'PageUp') return;
   if (state.typing && !mod && !e.altKey && (e.key.length === 1 || e.key === 'Enter') && !state.current.deleted) {
@@ -852,9 +901,15 @@ function wire() {
   $('#zoom-chip').onclick = () => editor.setZoom(1);
 
   const menu = $('#more-menu');
-  $('#btn-more').onclick = e => { e.stopPropagation(); closePopover(); menu.hidden = !menu.hidden; };
+  $('#btn-more').onclick = e => {
+    e.stopPropagation(); closePopover();
+    $('#menu-fav').textContent = state.current && state.current.fav ? 'Aus Favoriten entfernen' : 'Zu Favoriten';
+    menu.hidden = !menu.hidden;
+  };
+  wireInsert();
   document.addEventListener('pointerdown', e => {
     if (!menu.hidden && !e.target.closest('.menu-wrap')) menu.hidden = true;
+    if (!$('#insert-menu').hidden && !e.target.closest('.menu-wrap')) $('#insert-menu').hidden = true;
     if (!$('#popover').hidden && !e.target.closest('#popover, .tool, .swatch, #formatbar')) closePopover();
   });
   $('#opt-finger').onchange = e => { setFingerDraws(e.target.checked); toast(e.target.checked ? 'Finger zeichnet – mit zwei Fingern scrollen' : 'Finger scrollt – Stift zeichnet'); };
@@ -863,6 +918,8 @@ function wire() {
     if (!act) return;
     menu.hidden = true;
     if (act === 'note-settings') openNoteSettings();
+    if (act === 'fav' && state.current) { state.current.fav = !state.current.fav; scheduleSave(); toast(state.current.fav ? 'Zu Favoriten hinzugefügt ★' : 'Aus Favoriten entfernt'); }
+    if (act === 'paste') { if (!editor.paste(20)) toast('Zwischenablage ist leer – erst mit dem Lasso etwas kopieren'); }
     if (act === 'settings') openSettings();
     if (act === 'add-page') editor.addPage();
     if (act === 'insert-file') chooseFiles(true);
@@ -984,6 +1041,9 @@ function showFormatBar(wrap) {
 
 function updateFormatState() {
   if ($('#formatbar').hidden) return;
+  const n = window.getSelection().anchorNode;
+  const inTable = !!(n && (n.nodeType === 1 ? n : n.parentElement).closest('td, th'));
+  $('#formatbar').classList.toggle('table', inTable);
   for (const b of document.querySelectorAll('#formatbar .fmt[data-cmd]')) {
     const cmd = b.dataset.cmd;
     let on = false;
@@ -1023,6 +1083,16 @@ function runFormat(cmd, value) {
     const el = node && (node.nodeType === 1 ? node : node.parentElement);
     if (el && el.closest('li')) document.execCommand(cmd);
     else editor.indentBlock(wrap._body, cmd === 'indent' ? 1 : -1);
+  } else if (['rowAdd', 'rowDel', 'colAdd', 'colDel'].includes(cmd)) {
+    const node = window.getSelection().anchorNode;
+    const cell = node && (node.nodeType === 1 ? node : node.parentElement).closest('td, th');
+    if (cell) {
+      const table = cell.closest('table'), idx = cell.cellIndex;
+      if (cmd === 'rowAdd') tableRow(table, 1, cell.parentElement);
+      if (cmd === 'rowDel') tableRow(table, -1, cell.parentElement);
+      if (cmd === 'colAdd') tableCol(table, 1, idx);
+      if (cmd === 'colDel') tableCol(table, -1, idx);
+    }
   } else if (cmd === 'block') {
     document.execCommand('formatBlock', false, value);
   } else if (cmd === 'removeFormat') {
@@ -1122,6 +1192,115 @@ function openTextColorPicker(anchor) {
   placePopover(anchor);
 }
 
+/* ---------------- Lasso: Stil ändern ---------------- */
+function openSelectionStyle(anchor) {
+  const pop = $('#popover');
+  popoverFor = 'selstyle';
+  const first = editor.selection && [...editor.selection.strokes][0];
+  pop.innerHTML = `<div class="pop-title">Stil ändern</div>
+    <div class="size-row"><span>Stärke</span><input type="range" min="0.5" max="14" step="0.25" value="${first ? (first.tool === 'highlighter' ? first.width / 5 : first.width) : 2.5}"><span class="val"></span></div>
+    <div class="palette"></div>`;
+  const range = pop.querySelector('input'), val = pop.querySelector('.val');
+  val.textContent = (+range.value).toFixed(1);
+  range.onchange = () => { editor.styleSelection({ width: +range.value }); };
+  range.oninput = () => { val.textContent = (+range.value).toFixed(1); };
+  buildPalette(pop.querySelector('.palette'), c => editor.styleSelection({ color: c }), first && first.color);
+  placePopover(anchor);
+}
+
+/* ---------------- Einfügen-Menü ---------------- */
+function wireInsert() {
+  const menu = $('#insert-menu');
+  $('#btn-insert').onclick = e => { e.stopPropagation(); closePopover(); $('#more-menu').hidden = true; menu.hidden = !menu.hidden; };
+  menu.addEventListener('click', e => {
+    const b = e.target.closest('[data-ins]');
+    if (!b || !state.current || state.current.deleted) return;
+    menu.hidden = true;
+    const k = b.dataset.ins;
+    if (k === 'pdf') chooseFiles(true);
+    if (k === 'page') editor.addPage();
+    if (k === 'image') { $('#img-input').value = ''; $('#img-input').click(); }
+    if (k === 'camera') { $('#cam-input').value = ''; $('#cam-input').click(); }
+    if (k === 'sticky') { setTool('text'); editor.insertBox({ w: 320, box: { bg: '#fff3a3', sticky: true } }); }
+    if (k === 'table') {
+      setTool('text');
+      const row = n => `<tr>${Array.from({ length: n }, () => '<td><br></td>').join('')}</tr>`;
+      editor.insertBox({ w: 660, html: `<table><tbody>${row(3)}${row(3)}${row(3)}</tbody></table>` });
+      toast('Tab = nächste Zelle, in der letzten Zelle neue Zeile');
+    }
+    if (k === 'audio') startRecording();
+  });
+  const onImage = async e => {
+    const f = e.target.files[0];
+    if (!f) return;
+    try {
+      const bmp = await createImageBitmap(f);
+      const sc = Math.min(1, 1800 / bmp.width);
+      const c = document.createElement('canvas');
+      c.width = Math.round(bmp.width * sc); c.height = Math.round(bmp.height * sc);
+      c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+      const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.88));
+      const id = await storeAsset(blob);
+      editor.addImage(id, c.width, c.height);
+      toast('Bild eingefügt – mit den Ecken skalieren, ziehen zum Verschieben');
+    } catch (err) { toast('Bild konnte nicht geladen werden: ' + err.message, 5000); }
+  };
+  $('#img-input').onchange = onImage;
+  $('#cam-input').onchange = onImage;
+  $('#rec-stop').onclick = () => stopRecording(true);
+  $('#rec-cancel').onclick = () => stopRecording(false);
+}
+
+/* ---------------- Sprachaufnahme ---------------- */
+let rec = null;
+async function startRecording() {
+  if (rec) return;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const mr = new MediaRecorder(stream);
+    const chunks = [];
+    mr.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+    rec = { mr, stream, chunks, start: Date.now(), keep: true };
+    mr.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop());
+      const r = rec; rec = null;
+      $('#recbar').hidden = true;
+      clearInterval(r.timer);
+      if (!r.keep || !chunks.length) return;
+      const blob = new Blob(chunks, { type: mr.mimeType || 'audio/webm' });
+      const id = await storeAsset(blob);
+      editor.addAudio(id, (Date.now() - r.start) / 1000);
+      toast('Sprachaufnahme eingefügt');
+    };
+    mr.start(1000);
+    $('#recbar').hidden = false;
+    $('#rec-time').textContent = '0:00';
+    rec.timer = setInterval(() => {
+      const sec = Math.round((Date.now() - rec.start) / 1000);
+      $('#rec-time').textContent = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+    }, 500);
+  } catch (err) {
+    toast('Mikrofon nicht verfügbar: ' + (err.message || err), 5000);
+  }
+}
+function stopRecording(keep) {
+  if (!rec) return;
+  rec.keep = keep;
+  rec.mr.stop();
+}
+
+let playing = null;
+async function playAudio(au, el) {
+  if (playing) { playing.audio.pause(); playing.el.classList.remove('playing'); const same = playing.au === au; playing = null; if (same) return; }
+  const url = await getAssetURL(au.asset);
+  if (!url) { toast('Aufnahme noch nicht geladen – bitte synchronisieren'); return; }
+  const audio = new Audio(url);
+  playing = { audio, el, au };
+  el.classList.add('playing');
+  audio.onended = () => { el.classList.remove('playing'); playing = null; };
+  audio.play().catch(err => toast('Abspielen nicht möglich: ' + err.message));
+}
+
 /* ---------------- Notiz-Einstellungen ---------------- */
 function buildPaperPick(el, value, onPick) {
   el.innerHTML = '';
@@ -1165,6 +1344,16 @@ function openNoteSettings() {
     scheduleSave();
   };
   buildPaperPick($('#note-paper'), n.paper || 'lined', p => { editor.setPaper(p); });
+  const pcEl = $('#note-papercolor');
+  pcEl.innerHTML = '';
+  for (const [k, v] of Object.entries(PAPER_COLORS)) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = (n.paperColor || 'white') === k ? 'active' : '';
+    b.innerHTML = `<i style="background:${v.bg}"></i>${v.label}`;
+    b.onclick = () => { pcEl.querySelectorAll('button').forEach(x => x.classList.remove('active')); b.classList.add('active'); editor.setPaperColor(k); };
+    pcEl.appendChild(b);
+  }
   fillSelect($('#note-font'), fontEntries(), st().font);
   fillSelect($('#note-size'), sizeEntries(), st().size);
   $('#note-spacing').value = String(st().spacing || 1);
@@ -1182,7 +1371,7 @@ function openNoteSettings() {
     toast('Alle Textfelder nutzen jetzt die Notiz-Einstellungen');
   };
   $('#note-as-default').onclick = async () => {
-    state.defaults = { paper: n.paper || 'lined', text: st() };
+    state.defaults = { paper: n.paper || 'lined', paperColor: n.paperColor || 'white', text: st() };
     await saveGeneral();
     toast('Als Standard für neue Notizen gespeichert');
   };
@@ -1192,7 +1381,7 @@ function openNoteSettings() {
 
 /* ---------------- Allgemeine Einstellungen ---------------- */
 async function saveGeneral() {
-  await db.setMeta('general', { defaults: state.defaults, typing: state.typing, theme: state.theme });
+  await db.setMeta('general', { defaults: state.defaults, typing: state.typing, theme: state.theme, shapesOff: !!editor.shapesOff });
 }
 
 function applyTheme(theme) {
@@ -1219,6 +1408,7 @@ function fillGeneralSettings() {
   buildMiniPalette($('#def-color'), d.text.color, c => { d.text.color = c; saveGeneral(); });
   $('#def-finger').checked = editor.fingerDraws;
   $('#def-typing').checked = state.typing;
+  $('#def-shapes').checked = !editor.shapesOff;
   $('#def-theme').querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.v === state.theme));
 }
 
@@ -1231,6 +1421,7 @@ function wireSettings() {
   $('#def-indent').onchange = e => { d().text.indent = +e.target.value; saveGeneral(); };
   $('#def-finger').onchange = e => setFingerDraws(e.target.checked);
   $('#def-typing').onchange = e => { state.typing = e.target.checked; saveGeneral(); };
+  $('#def-shapes').onchange = e => { editor.shapesOff = !e.target.checked; saveGeneral(); };
   $('#def-theme').querySelectorAll('button').forEach(b => {
     b.onclick = () => { applyTheme(b.dataset.v); saveGeneral(); fillGeneralSettings(); };
   });
@@ -1249,6 +1440,8 @@ async function init() {
   const general = await db.getMeta('general', {});
   if (general.defaults) state.defaults = { paper: general.defaults.paper || 'lined', text: { ...DEFAULT_TEXT, ...(general.defaults.text || {}) } };
   if (general.typing === false) state.typing = false;
+  if (general.defaults && general.defaults.paperColor) state.defaults.paperColor = general.defaults.paperColor;
+  editor.shapesOff = !!general.shapesOff;
   applyTheme(general.theme || 'system');
   state.colorSlots = await db.getMeta('colorSlots', [...DEFAULT_SLOTS]);
   editor.tool = TOOLS.includes(prefs.tool) ? prefs.tool : 'pen';

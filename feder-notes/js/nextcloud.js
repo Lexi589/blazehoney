@@ -7,7 +7,7 @@
 //
 // Es werden bewusst nur GET/PUT/DELETE benutzt (funktioniert auch mit dem Android-HTTP-Client).
 // Gleichzeitige Änderungen am Inhaltsverzeichnis werden per ETag (If-Match) erkannt.
-import { db } from './db.js';
+import { db, pageAssets } from './db.js';
 import { http, platform, openExternal } from './transport.js';
 
 export function normalizeNcUrl(url) {
@@ -141,9 +141,8 @@ export async function ncSync(s) {
 
     // 2. fehlende Bilder / PDF-Seiten laden
     const have = new Set(await db.allAssetKeys());
-    for (const n of s.getNotes()) for (const p of n.pages) {
-      const id = p.bg && p.bg.asset;
-      if (!id || have.has(id)) continue;
+    for (const n of s.getNotes()) for (const p of n.pages) for (const id of pageAssets(p)) {
+      if (have.has(id)) continue;
       const res = await nc.get(`asset-${id}.b64`);
       if (!res) continue;
       const nl = res.text.indexOf('\n');
@@ -156,9 +155,7 @@ export async function ncSync(s) {
     const dirty = s.getNotes().filter(n => n.dirty);
     const sent = new Map();
     for (const n of dirty) {
-      for (const p of n.pages) {
-        const id = p.bg && p.bg.asset;
-        if (!id) continue;
+      for (const p of n.pages) for (const id of pageAssets(p)) {
         const a = await db.getAsset(id);
         if (a && !a.synced) {
           await nc.put(`asset-${id}.b64`, a.type + '\n' + await blobToBase64(a.blob));

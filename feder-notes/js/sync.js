@@ -3,7 +3,7 @@
 // wir holen alles seit unserer letzten Revision und schicken lokale Änderungen hoch.
 // Wurde dieselbe Notiz auf zwei Geräten geändert, gewinnt die neuere – die andere wird
 // als "Konflikt"-Kopie behalten, damit nie etwas verloren geht.
-import { db, uid } from './db.js';
+import { db, uid, pageAssets } from './db.js';
 import { ncSync, ncTest } from './nextcloud.js';
 
 export class Sync {
@@ -93,9 +93,8 @@ export class Sync {
 
       // 2. fehlende Bilder/PDF-Seiten laden
       const have = new Set(await db.allAssetKeys());
-      for (const n of this.getNotes()) for (const p of n.pages) {
-        const id = p.bg && p.bg.asset;
-        if (id && !have.has(id)) {
+      for (const n of this.getNotes()) for (const p of n.pages) for (const id of pageAssets(p)) {
+        if (!have.has(id)) {
           const ar = await this.api('/api/assets/' + id);
           if (ar.ok) {
             const blob = await ar.blob();
@@ -108,9 +107,7 @@ export class Sync {
       // 3. lokale Änderungen hochladen
       const dirty = this.getNotes().filter(n => n.dirty);
       if (dirty.length) {
-        for (const n of dirty) for (const p of n.pages) {
-          const id = p.bg && p.bg.asset;
-          if (!id) continue;
+        for (const n of dirty) for (const p of n.pages) for (const id of pageAssets(p)) {
           const a = await db.getAsset(id);
           if (a && !a.synced) {
             await this.api('/api/assets/' + id, { method: 'PUT', headers: { 'Content-Type': a.type }, body: a.blob });
