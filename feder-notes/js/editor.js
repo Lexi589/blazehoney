@@ -61,6 +61,7 @@ export class Editor {
       if (!e.ctrlKey) return;
       e.preventDefault();
       const r = container.getBoundingClientRect();
+      if (!this.preview) this.stopScroll();
       const z = (this.preview ? this.preview.z : this.zoom) * (e.deltaY < 0 ? 1.1 : 1 / 1.1);
       this.previewZoom(z, { x: e.clientX - r.left, y: e.clientY - r.top });
       clearTimeout(this._wheelT);
@@ -212,20 +213,40 @@ export class Editor {
     }
   }
 
-  /** Endgültiger Zoom (zeichnet neu). anchor = Punkt im sichtbaren Bereich, der stehen bleibt. */
+  /** Seite unter einem Bildschirmpunkt (oder die nächstgelegene). */
+  pageAt(sx, sy) {
+    let best = null, bestD = Infinity;
+    for (const pv of this.pages) {
+      const r = pv.el.getBoundingClientRect();
+      const d = sy < r.top ? r.top - sy : sy > r.bottom ? sy - r.bottom : 0;
+      if (d < bestD) { bestD = d; best = pv; }
+    }
+    return best;
+  }
+
+  /**
+   * Endgültiger Zoom (zeichnet neu). anchor = Punkt im sichtbaren Bereich (relativ zum Seitenbereich),
+   * der genau an derselben Stelle der Seite bleibt – auch über viele Seiten und bei zentrierten Seiten.
+   */
   setZoom(z, anchor) {
     z = Math.min(4, Math.max(0.4, z));
-    if (this.preview) { this.preview = null; this.inner.style.transform = ''; this.inner.style.willChange = ''; }
-    if (Math.abs(z - this.zoom) < 0.001) return;
     const c = this.container;
-    const ax = anchor ? anchor.x : c.clientWidth / 2;
-    const ay = anchor ? anchor.y : c.clientHeight / 2;
-    const f = z / this.zoom;
-    const px = c.scrollLeft + ax, py = c.scrollTop + ay;
+    const cr = c.getBoundingClientRect();
+    const sx = cr.left + (anchor ? anchor.x : c.clientWidth / 2);
+    const sy = cr.top + (anchor ? anchor.y : c.clientHeight / 2);
+    const pv = this.pages.length ? this.pageAt(sx, sy) : null;
+    // Position auf der Seite merken (so wie sie gerade zu sehen ist – auch während der Vorschau)
+    let fx = 0.5, fy = 0.5;
+    if (pv) { const r = pv.el.getBoundingClientRect(); fx = (sx - r.left) / r.width; fy = (sy - r.top) / r.height; }
+    if (this.preview) { this.preview = null; this.inner.style.transform = ''; this.inner.style.willChange = ''; }
+    if (Math.abs(z - this.zoom) < 0.001 && !pv) return;
     this.zoom = z;
     this.relayout();
-    c.scrollLeft = px * f - ax;
-    c.scrollTop = py * f - ay;
+    if (pv) {
+      const r2 = pv.el.getBoundingClientRect();
+      c.scrollLeft += r2.left + fx * r2.width - sx;
+      c.scrollTop += r2.top + fy * r2.height - sy;
+    }
     this.opts.onZoom && this.opts.onZoom(z);
   }
 
@@ -250,7 +271,14 @@ export class Editor {
     const p = this.preview;
     if (!p) return;
     this.setZoom(p.z, p.anchor);
-    if (this.preview) { this.preview = null; this.inner.style.transform = ''; this.inner.style.willChange = ''; }
+  }
+
+  /** Laufendes Scrollen (Schwung, weiches Scrollen) sofort anhalten. */
+  stopScroll(hold) {
+    const c = this.container;
+    c.style.overflow = 'hidden';
+    c.scrollTop = c.scrollTop;
+    if (!hold) requestAnimationFrame(() => { c.style.overflow = ''; });
   }
 
   /* ---------------- Touch: natives Scrollen, eigenes Pinch-Zoom ---------------- */
@@ -262,6 +290,7 @@ export class Editor {
     if (this.fingerDraws) return;
     if (e.touches.length >= 2) {
       if (e.cancelable) e.preventDefault();
+      this.stopScroll(true);            // Android-Scrollen/Schwung darf nicht mitlaufen
       const [a, b] = e.touches;
       const r = this.container.getBoundingClientRect();
       const cx = (a.clientX + b.clientX) / 2, cy = (a.clientY + b.clientY) / 2;
@@ -285,7 +314,11 @@ export class Editor {
   }
 
   onTouchEnd(e) {
-    if (this.pinch && e.touches.length < 2) { this.pinch = null; this.commitPreview(); }
+    if (this.pinch && e.touches.length < 2) {
+      this.pinch = null;
+      this.commitPreview();
+      this.container.style.overflow = '';
+    }
   }
 
   /* ---------------- Zeichnen ---------------- */
@@ -1404,7 +1437,10 @@ export class Editor {
     const pv = this.buildPage(data, index);
     this.relayout();
     this.pushHistory({ t: 'addpage', pv, index });
-    if (scroll) pv.el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (scroll) {
+      const c = this.container;
+      c.scrollTop += pv.el.getBoundingClientRect().top - c.getBoundingClientRect().top - 12;
+    }
     return pv;
   }
 

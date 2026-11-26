@@ -72,7 +72,8 @@ class NC {
   }
 
   async get(name) {
-    const res = await this.req('GET', (await this.base()) + name, { 'Cache-Control': 'no-cache' });
+    // unkomprimiert anfordern: Server mit gzip machen aus ETags sonst schwache (W/…), die If-Match nie erfüllen
+    const res = await this.req('GET', (await this.base()) + name, { 'Cache-Control': 'no-cache', 'Accept-Encoding': 'identity' });
     if (res.status === 404) return null;
     if (res.status !== 200) throw new Error(`Lesen von ${name} fehlgeschlagen (${res.status})`);
     return res;
@@ -98,7 +99,8 @@ class NC {
     let index;
     try { index = JSON.parse(res.text); } catch { index = null; }
     if (!index || typeof index.notes !== 'object') index = { format: 'feder-notes', notes: {} };
-    return { index, etag: res.headers.etag || null };
+    const etag = (res.headers.etag || '').replace(/^W\//, '') || null;
+    return { index, etag };
   }
 }
 
@@ -115,74 +117,86 @@ export async function ncTest(cfg) {
 const json = obj => JSON.stringify(obj);
 
 /** Ein Synchronisationsdurchlauf. `s` ist die Sync-Instanz (mergeRemote, getNotes …). */
+/** Was von einer Notiz hochgeladen wird (ohne lokale Vorschaubilder & Sync-Markierungen). */
+export function notePayload(n) {
+  const { dirty, thumb, thumbAt, ...payload } = n;
+  return payload;
+}
+
 export async function ncSync(s) {
   const nc = new NC(s.config);
-  for (let attempt = 0; attempt < 4; attempt++) {
-    const { index, etag } = await nc.getIndex();
-    const seenKey = 'ncSeen:' + nc.root + '|' + s.config.ncUser + '|' + nc.folder.join('/');
-    const seen = await db.getMeta(seenKey, {});
+  const seenKey = 'ncSeen:' + nc.root + '|' + s.config.ncUser + '|' + nc.folder.join('/');
+  const seen = await db.getMeta(seenKey, {});
+  const { index } = await nc.getIndex();
 
-    // 1. Änderungen anderer Geräte holen
-    for (const [id, r] of Object.entries(index.notes)) {
-      const local = s.getNotes().find(n => n.id === id);
-      if (local && local.updatedAt === r.u) {
-        if (local.dirty) { local.dirty = false; await db.putNote(local); }
-        seen[id] = r.u;
-        continue;
-      }
-      if (local && local.dirty && seen[id] === r.u) continue;   // nur hier geändert → wird hochgeladen
-      if (!local && r.d && r.p) { seen[id] = r.u; continue; }   // endgültig gelöscht, hier nie gesehen
-      const res = await nc.get(`note-${id}.json`);
-      if (!res) continue;
-      const remote = JSON.parse(res.text);
-      await s.mergeRemote(remote);
-      seen[id] = remote.updatedAt;
+  // 1. Änderungen anderer Geräte holen
+  for (const [id, r] of Object.entries(index.notes)) {
+    const local = s.getNotes().find(n => n.id === id);
+    if (local && local.updatedAt === r.u) {
+      if (local.dirty) { local.dirty = false; await db.putNote(local); }
+      seen[id] = r.u;
+      continue;
     }
-
-    // 2. fehlende Bilder / PDF-Seiten laden
-    const have = new Set(await db.allAssetKeys());
-    for (const n of s.getNotes()) for (const p of n.pages) for (const id of pageAssets(p)) {
-      if (have.has(id)) continue;
-      const res = await nc.get(`asset-${id}.b64`);
-      if (!res) continue;
-      const nl = res.text.indexOf('\n');
-      const type = res.text.slice(0, nl) || 'image/jpeg';
-      await db.putAsset({ id, type, blob: base64ToBlob(res.text.slice(nl + 1).trim(), type), synced: true });
-      have.add(id);
-    }
-
-    // 3. eigene Änderungen hochladen
-    const dirty = s.getNotes().filter(n => n.dirty);
-    const sent = new Map();
-    for (const n of dirty) {
-      for (const p of n.pages) for (const id of pageAssets(p)) {
-        const a = await db.getAsset(id);
-        if (a && !a.synced) {
-          await nc.put(`asset-${id}.b64`, a.type + '\n' + await blobToBase64(a.blob));
-          a.synced = true; await db.putAsset(a);
-        }
-      }
-      const { dirty: _d, ...payload } = n;
-      await nc.put(`note-${n.id}.json`, json(payload));
-      index.notes[n.id] = { u: n.updatedAt, d: !!n.deleted, ...(n.purged ? { p: 1 } : {}) };
-      sent.set(n, n.updatedAt);
-    }
-
-    // 4. Inhaltsverzeichnis schreiben (nur wenn sich niemand dazwischen gedrängelt hat)
-    if (sent.size) {
-      index.format = 'feder-notes';
-      index.updated = Date.now();
-      const cond = etag ? { 'If-Match': etag } : { 'If-None-Match': '*' };
-      if (await nc.put('index.json', json(index), cond) === 'conflict') continue;   // neu einlesen & nochmal
-    }
-    for (const [n, at] of sent) {
-      seen[n.id] = at;
-      if (n.updatedAt === at) { n.dirty = false; await db.putNote(n); }
-    }
-    await db.setMeta(seenKey, seen);
-    return;
+    if (local && local.dirty && seen[id] === r.u) continue;   // nur hier geändert → wird hochgeladen
+    if (local && !local.dirty && local.updatedAt > r.u) continue;
+    if (!local && r.d && r.p) { seen[id] = r.u; continue; }   // endgültig gelöscht, hier nie gesehen
+    const res = await nc.get(`note-${id}.json`);
+    if (!res) continue;
+    const remote = JSON.parse(res.text);
+    await s.mergeRemote(remote);
+    seen[id] = remote.updatedAt;
   }
-  throw new Error('Nextcloud ist gerade ausgelastet – bitte gleich nochmal versuchen');
+
+  // 2. fehlende Bilder / PDF-Seiten / Aufnahmen laden
+  const have = new Set(await db.allAssetKeys());
+  for (const n of s.getNotes()) for (const p of n.pages) for (const id of pageAssets(p)) {
+    if (have.has(id)) continue;
+    const res = await nc.get(`asset-${id}.b64`);
+    if (!res) continue;
+    const nl = res.text.indexOf('\n');
+    const type = res.text.slice(0, nl) || 'image/jpeg';
+    await db.putAsset({ id, type, blob: base64ToBlob(res.text.slice(nl + 1).trim(), type), synced: true });
+    have.add(id);
+  }
+
+  // 3. eigene Änderungen hochladen – jede Datei genau einmal
+  const dirty = s.getNotes().filter(n => n.dirty);
+  const sent = new Map();
+  for (const n of dirty) {
+    for (const p of n.pages) for (const id of pageAssets(p)) {
+      const a = await db.getAsset(id);
+      if (a && !a.synced) {
+        await nc.put(`asset-${id}.b64`, a.type + '\n' + await blobToBase64(a.blob));
+        a.synced = true; await db.putAsset(a);
+      }
+    }
+    await nc.put(`note-${n.id}.json`, json(notePayload(n)));
+    sent.set(n, n.updatedAt);
+  }
+
+  // 4. Inhaltsverzeichnis aktualisieren. Bei gleichzeitigen Änderungen neu einlesen und zusammenführen –
+  //    nur diese kleine Datei wird wiederholt, nie die Notizen.
+  if (sent.size) {
+    let written = false;
+    for (let attempt = 0; attempt < 3 && !written; attempt++) {
+      const fresh = attempt === 0 ? { index, etag: null, first: true } : await nc.getIndex();
+      const cur = fresh.first ? await nc.getIndex() : fresh;
+      for (const [n, at] of sent) {
+        const r = cur.index.notes[n.id];
+        if (!r || r.u <= at) cur.index.notes[n.id] = { u: at, d: !!n.deleted, ...(n.purged ? { p: 1 } : {}) };
+      }
+      cur.index.format = 'feder-notes';
+      cur.index.updated = Date.now();
+      const cond = cur.etag ? { 'If-Match': cur.etag } : { 'If-None-Match': '*' };
+      const last = attempt === 2;
+      written = (await nc.put('index.json', json(cur.index), last ? {} : cond)) === 'ok';
+    }
+  }
+  for (const [n, at] of sent) {
+    seen[n.id] = at;
+    if (n.updatedAt === at) { n.dirty = false; await db.putNote(n); }
+  }
+  await db.setMeta(seenKey, seen);
 }
 
 function blobToBase64(blob) {

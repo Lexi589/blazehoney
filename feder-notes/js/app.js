@@ -297,6 +297,7 @@ function renderHome() {
   const notes = visibleNotes();
   $('#note-count').textContent = `${notes.length} ${notes.length === 1 ? 'Notiz' : 'Notizen'}`;
   $('#connect-banner').hidden = sync.configured;
+  $('#btn-empty-trash').hidden = !(state.folder === TRASH && notes.length);
 
   const grid = $('#note-grid');
   const q = state.search.trim();
@@ -323,7 +324,27 @@ function renderHome() {
     card.innerHTML = `<div class="thumb">${thumb}</div>
       <div class="t">${n.fav ? '<span class="up">★</span> ' : ''}${hl(n.title || 'Unbenannt')}</div>
       <div class="m"><span>${date}</span>${n.folder && state.folder === ALL ? `<span>· ${escapeHTML(n.folder)}</span>` : ''}${n.dirty && sync.configured ? '<span class="up" title="noch nicht synchronisiert">↑</span>' : ''}</div>${extra}`;
-    card.onclick = () => openNote(n);
+    card.insertAdjacentHTML('beforeend', '');
+    card.querySelector('.thumb').insertAdjacentHTML('beforeend', '<span class="check"><svg><use href="#i-check"/></svg></span>');
+    if (picked.has(n.id)) card.classList.add('selected');
+    let pressT = null, longPressed = false;
+    card.onpointerdown = () => {
+      longPressed = false;
+      pressT = setTimeout(() => {
+        longPressed = true;
+        if (navigator.vibrate) try { navigator.vibrate(15); } catch { /* egal */ }
+        if (!document.body.classList.contains('selecting')) setSelecting(true);
+        picked.add(n.id); updateSelectBar();
+      }, 480);
+    };
+    const cancelPress = () => clearTimeout(pressT);
+    card.onpointerup = cancelPress; card.onpointerleave = cancelPress; card.onpointercancel = cancelPress;
+    card.oncontextmenu = e => { e.preventDefault(); cancelPress(); if (!longPressed) { if (!document.body.classList.contains('selecting')) setSelecting(true); picked.add(n.id); updateSelectBar(); } longPressed = true; };
+    card.onclick = () => {
+      if (longPressed) { longPressed = false; return; }
+      if (document.body.classList.contains('selecting')) togglePick(n.id);
+      else openNote(n);
+    };
     grid.appendChild(card);
     wantThumb(n);
   }
@@ -348,7 +369,7 @@ function renderFolders() {
     const b = document.createElement('button');
     b.className = 'drawer-item' + (state.folder === key ? ' active' : '');
     b.innerHTML = `<svg><use href="#${icon}"/></svg>${escapeHTML(label)}<span class="n">${n}</span>`;
-    b.onclick = () => { state.folder = key; toggleDrawer(false); renderHome(); };
+    b.onclick = () => { state.folder = key; toggleDrawer(false); setSelecting(false); renderHome(); };
     el.appendChild(b);
   }
   $('#folder-datalist').innerHTML = folders().map(f => `<option value="${escapeHTML(f)}">`).join('');
@@ -369,7 +390,7 @@ function askFolderName() {
     const dlg = $('#dlg-folder');
     $('#folder-name').value = '';
     dlg.returnValue = '';
-    dlg.onclose = () => resolve(dlg.returnValue === 'ok' ? $('#folder-name').value.trim() : '');
+    dlg.onclose = () => resolve(dlg.returnValue === 'ok' ? $('#folder-name').value.trim() : null);
     dlg.showModal();
   });
 }
@@ -663,7 +684,7 @@ async function runImport(files, folder) {
   }
   if (folder) state.folder = folder;
   renderHome();
-  if (last) { openNote(last); toast(`${ok} von ${files.length} Datei(en) importiert`); sync.sync(); }
+  if (last) { openNote(last); toast(`${ok} von ${files.length} Datei(en) importiert`); maybeAutoSync(); }
 }
 
 async function insertIntoCurrent(files) {
@@ -719,11 +740,56 @@ const sync = new Sync({
 });
 
 let autoTimer = null;
+/* Zeitplan: live (jede Minute) | every2h | daily (Uhrzeit) | manual */
+function schedule() {
+  const c = sync.config || {};
+  if (c.schedule) return c.schedule;
+  return c.auto === false ? 'manual' : 'every2h';
+}
+function dailyAt(now = new Date()) {
+  const [h, m] = ((sync.config && sync.config.dailyAt) || '16:00').split(':').map(Number);
+  const d = new Date(now); d.setHours(h || 0, m || 0, 0, 0);
+  return d;
+}
+/** Ist ein automatischer Abgleich fällig? */
+async function autoSyncDue() {
+  if (!sync.configured) return false;
+  const mode = schedule();
+  if (mode === 'manual') return false;
+  if (sync.config.wifiOnly && navigator.connection && navigator.connection.type === 'cellular') return false;
+  if (mode === 'live') return true;
+  const last = await db.getMeta('lastSyncAt', 0);
+  const now = Date.now();
+  if (mode === 'every2h') return now - last >= 2 * 3600_000;
+  if (mode === 'daily') { const at = dailyAt().getTime(); return now >= at && last < at; }
+  return false;
+}
+function nextSyncText() {
+  const mode = schedule();
+  if (!sync.configured) return '';
+  if (mode === 'manual') return 'Nur manuell';
+  if (mode === 'daily') return 'Nächster Abgleich ' + ((sync.config && sync.config.dailyAt) || '16:00');
+  if (mode === 'every2h') return 'Abgleich alle 2 Std.';
+  return '';
+}
+async function maybeAutoSync() {
+  if (await autoSyncDue()) await syncNow();
+}
 function setupAutoSync() {
   clearInterval(autoTimer);
-  if (sync.configured && sync.config.auto !== false) autoTimer = setInterval(() => sync.sync(), 60_000);
+  if (!sync.configured || schedule() === 'manual') return;
+  // „live“: jede Minute; sonst alle 5 Minuten prüfen, ob die geplante Zeit erreicht ist
+  autoTimer = setInterval(() => maybeAutoSync(), schedule() === 'live' ? 60_000 : 300_000);
 }
-async function syncNow() { await flushSave(); await sync.sync(); renderHome(); }
+async function syncNow() {
+  await flushSave();
+  await sync.sync();
+  if (/^(Synchronisiert|Nextcloud)/.test($('#sync-status').textContent)) await db.setMeta('lastSyncAt', Date.now());
+  const hint = nextSyncText();
+  const el = $('#sync-status');
+  if (hint && !/Fehler|Offline/.test(el.textContent)) el.textContent += ' · ' + hint;
+  renderHome();
+}
 
 /* ---------------- Nextcloud-Dialog ---------------- */
 let loginRun = 0;
@@ -740,7 +806,10 @@ async function openSettings() {
   $('#set-nc-folder').value = cfg.ncFolder || 'FederNotes';
   $('#set-nc-user').value = cfg.ncUser || '';
   $('#set-nc-pass').value = '';
-  $('#set-auto').checked = cfg.auto !== false;
+  $('#set-schedule').value = schedule();
+  $('#set-daily').value = cfg.dailyAt || '16:00';
+  $('#set-wifi').checked = !!cfg.wifiOnly;
+  $('#row-daily').hidden = schedule() !== 'daily';
   $('#set-url').value = cfg.mode === 'server' ? cfg.url || '' : '';
   $('#set-token').value = '';
   $('#set-result').textContent = '';
@@ -751,7 +820,7 @@ async function openSettings() {
 }
 
 async function connect(cfg) {
-  await sync.saveConfig({ mode: 'nextcloud', auto: $('#set-auto').checked, ncFolder: $('#set-nc-folder').value.trim().replace(/^\/+|\/+$/g, '') || 'FederNotes', ...cfg });
+  await sync.saveConfig({ mode: 'nextcloud', schedule: $('#set-schedule').value, dailyAt: $('#set-daily').value || '16:00', wifiOnly: $('#set-wifi').checked, ncFolder: $('#set-nc-folder').value.trim().replace(/^\/+|\/+$/g, '') || 'FederNotes', ...cfg });
   await db.setMeta('ncLastUrl', cfg.ncUrl);
   setupAutoSync();
   if ($('#dlg-settings').open) $('#dlg-settings').close();
@@ -781,6 +850,68 @@ async function startLogin() {
   } finally {
     btn.disabled = false;
   }
+}
+
+/* ---------------- Bestätigen (eigener Dialog – Android-WebView zeigt confirm() oft nicht) ---------------- */
+function askConfirm(title, text, okLabel = 'OK', danger = false) {
+  return new Promise(resolve => {
+    const dlg = $('#dlg-confirm');
+    $('#confirm-title').textContent = title;
+    $('#confirm-text').textContent = text;
+    const ok = $('#confirm-ok');
+    ok.textContent = okLabel;
+    ok.classList.toggle('danger-fill', danger);
+    dlg.returnValue = '';
+    dlg.onclose = () => resolve(dlg.returnValue === 'ok');
+    dlg.showModal();
+  });
+}
+
+/* ---------------- Auswahl in der Übersicht (lange drücken, wie bei Samsung) ---------------- */
+const picked = new Set();
+function setSelecting(on) {
+  if (!on) picked.clear();
+  document.body.classList.toggle('selecting', on);
+  $('#select-bar').hidden = !on;
+  document.querySelector('.home-bar:not(.select-bar)').hidden = on;
+  updateSelectBar();
+}
+function updateSelectBar() {
+  $('#sel-count').textContent = `${picked.size} ausgewählt`;
+  const inTrash = state.folder === TRASH;
+  $('#sel-restore').hidden = !inTrash;
+  $('#sel-fav').hidden = inTrash;
+  $('#sel-move').hidden = inTrash;
+  document.querySelectorAll('.card').forEach(c => c.classList.toggle('selected', picked.has(c.dataset.id)));
+}
+function togglePick(id) {
+  if (picked.has(id)) picked.delete(id); else picked.add(id);
+  if (!picked.size) setSelecting(false); else updateSelectBar();
+}
+const pickedNotes = () => state.notes.filter(n => picked.has(n.id));
+
+async function purgeNotes(notes) {
+  for (const n of notes) {
+    // Grabstein behalten, damit die Löschung auch auf andere Geräte synchronisiert wird
+    Object.assign(n, { purged: true, deleted: true, pages: [], title: '', thumb: null, updatedAt: Date.now(), dirty: true });
+    await db.putNote(n);
+  }
+}
+
+async function deletePicked() {
+  const notes = pickedNotes();
+  if (!notes.length) return;
+  if (state.folder === TRASH) {
+    if (!await askConfirm('Endgültig löschen?', `${notes.length} Notiz(en) werden dauerhaft gelöscht – auch in der Nextcloud. Das kann nicht rückgängig gemacht werden.`, 'Endgültig löschen', true)) return;
+    await purgeNotes(notes);
+    toast(`${notes.length} Notiz(en) gelöscht`);
+  } else {
+    for (const n of notes) { n.deleted = true; n.updatedAt = Date.now(); n.dirty = true; await db.putNote(n); }
+    toast(`${notes.length} Notiz(en) in den Papierkorb verschoben`);
+  }
+  if (state.current && notes.includes(state.current)) await openNote(null);
+  setSelecting(false);
+  renderHome();
 }
 
 /* ---------------- Kleinkram ---------------- */
@@ -934,12 +1065,42 @@ function wire() {
     await db.putNote(n); state.folder = ALL; openNote(n);
   };
   $('#btn-purge').onclick = async () => {
-    if (!confirm('Notiz endgültig löschen? Das kann nicht rückgängig gemacht werden.')) return;
-    const n = state.current;
-    Object.assign(n, { purged: true, deleted: true, pages: [], title: '', thumb: null, updatedAt: Date.now(), dirty: true });
-    await db.putNote(n);
+    if (!await askConfirm('Endgültig löschen?', 'Die Notiz wird dauerhaft gelöscht – auch in der Nextcloud. Das kann nicht rückgängig gemacht werden.', 'Endgültig löschen', true)) return;
+    await purgeNotes([state.current]);
     await openNote(null);
     showHome();
+    toast('Notiz gelöscht');
+  };
+  // Auswahlmodus in der Übersicht
+  $('#sel-cancel').onclick = () => setSelecting(false);
+  $('#sel-all').onclick = () => { visibleNotes().forEach(n => picked.add(n.id)); updateSelectBar(); };
+  $('#sel-delete').onclick = deletePicked;
+  $('#sel-fav').onclick = async () => {
+    const notes = pickedNotes(), on = !notes.every(n => n.fav);
+    for (const n of notes) { n.fav = on; n.updatedAt = Date.now(); n.dirty = true; await db.putNote(n); }
+    toast(on ? 'Zu Favoriten hinzugefügt ★' : 'Aus Favoriten entfernt');
+    setSelecting(false); renderHome();
+  };
+  $('#sel-move').onclick = async () => {
+    const name = await askFolderName();
+    if (name == null) return;
+    if (name) await addFolder(name);
+    for (const n of pickedNotes()) { n.folder = name; n.updatedAt = Date.now(); n.dirty = true; await db.putNote(n); }
+    toast(name ? `Nach „${name}“ verschoben` : 'Aus dem Ordner genommen');
+    setSelecting(false); renderHome();
+  };
+  $('#sel-restore').onclick = async () => {
+    for (const n of pickedNotes()) { n.deleted = false; n.updatedAt = Date.now(); n.dirty = true; await db.putNote(n); }
+    toast('Wiederhergestellt');
+    setSelecting(false); renderHome();
+  };
+  $('#btn-empty-trash').onclick = async () => {
+    const notes = state.notes.filter(n => n.deleted && !n.purged);
+    if (!notes.length) return;
+    if (!await askConfirm('Papierkorb leeren?', `${notes.length} Notiz(en) werden dauerhaft gelöscht – auch in der Nextcloud.`, 'Leeren', true)) return;
+    await purgeNotes(notes);
+    renderHome();
+    toast('Papierkorb geleert');
   };
 
   // Nextcloud
@@ -949,9 +1110,9 @@ function wire() {
   $('#set-nc-url').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); startLogin(); } };
   $('#btn-sync-now').onclick = () => { $('#dlg-settings').close(); syncNow(); };
   $('#btn-disconnect').onclick = async () => {
-    if (!confirm('Von Nextcloud abmelden? Deine Notizen bleiben auf diesem Gerät und in der Nextcloud erhalten.')) return;
+    if (!await askConfirm('Von Nextcloud abmelden?', 'Deine Notizen bleiben auf diesem Gerät und in der Nextcloud erhalten.', 'Abmelden')) return;
     const cfg = sync.config;
-    await sync.saveConfig({ mode: 'nextcloud', auto: cfg.auto, ncUrl: cfg.ncUrl, ncFolder: cfg.ncFolder, ncUser: '', ncPass: '' });
+    await sync.saveConfig({ mode: 'nextcloud', schedule: cfg.schedule, dailyAt: cfg.dailyAt, wifiOnly: cfg.wifiOnly, ncUrl: cfg.ncUrl, ncFolder: cfg.ncFolder, ncUser: '', ncPass: '' });
     setupAutoSync();
     sync.onStatus('off', 'Sync: nicht eingerichtet');
     $('#dlg-settings').close();
@@ -970,7 +1131,7 @@ function wire() {
     catch (err) { $('#set-result').textContent = '✗ ' + err.message; }
   };
   $('#btn-save-server').onclick = async () => {
-    const cfg = { mode: 'server', url: $('#set-url').value.trim(), token: $('#set-token').value.trim(), auto: $('#set-auto').checked };
+    const cfg = { mode: 'server', url: $('#set-url').value.trim(), token: $('#set-token').value.trim(), schedule: $('#set-schedule').value, dailyAt: $('#set-daily').value, wifiOnly: $('#set-wifi').checked };
     try { await sync.test(cfg); }
     catch (err) { $('#set-result').textContent = '✗ ' + (err.message === 'Failed to fetch' ? 'Server nicht erreichbar' : err.message); return; }
     await sync.saveConfig(cfg);
@@ -978,11 +1139,16 @@ function wire() {
     $('#dlg-settings').close();
     renderHome(); syncNow();
   };
-  $('#set-auto').onchange = async e => {
-    if (!sync.config) return;
-    await sync.saveConfig({ ...sync.config, auto: e.target.checked });
+  const saveSchedule = async () => {
+    $('#row-daily').hidden = $('#set-schedule').value !== 'daily';
+    await sync.saveConfig({ ...(sync.config || {}), schedule: $('#set-schedule').value, dailyAt: $('#set-daily').value || '16:00', wifiOnly: $('#set-wifi').checked });
     setupAutoSync();
+    const hint = nextSyncText();
+    if (hint) toast(hint);
   };
+  $('#set-schedule').onchange = saveSchedule;
+  $('#set-daily').onchange = saveSchedule;
+  $('#set-wifi').onchange = saveSchedule;
   $('#btn-backup').onclick = async () => {
     const blob = await exportBackup(state.notes.filter(n => !n.purged));
     const a = document.createElement('a');
@@ -1008,10 +1174,10 @@ function wire() {
   });
 
   window.addEventListener('resize', () => { if (!$('#popover').hidden) closePopover(); });
-  window.addEventListener('online', () => sync.sync());
+  window.addEventListener('online', () => maybeAutoSync());
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') { flushSave().then(() => sync.configured && sync.config.auto !== false && sync.sync()); }
-    else if (sync.configured && sync.config.auto !== false) sync.sync();
+    if (document.visibilityState === 'hidden') { flushSave().then(() => schedule() === 'live' && maybeAutoSync()); }
+    else maybeAutoSync();
   });
   window.addEventListener('beforeunload', () => { if (saveTimer && state.current) db.putNote(state.current); });
 }
@@ -1471,7 +1637,7 @@ async function init() {
     else document.body.classList.add('no-note');
   }
   showHome();
-  if (sync.configured) syncNow();
+  maybeAutoSync();
 
   if (platform === 'web' && 'serviceWorker' in navigator && window.isSecureContext) {
     navigator.serviceWorker.register('sw.js').catch(err => console.warn('Service Worker:', err));

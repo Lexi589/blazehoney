@@ -72,9 +72,19 @@
       <button class="icon-btn" id="btn-import" title="Importieren (PDF, Samsung Notes, Bilder)"><svg><use href="#i-import"/></svg></button>
       <button class="icon-btn" id="btn-settings" title="Einstellungen &amp; Nextcloud"><svg><use href="#i-settings"/></svg></button>
     </header>
+    <header class="home-bar select-bar" id="select-bar" hidden>
+      <button class="icon-btn" id="sel-cancel" title="Auswahl beenden"><svg><use href="#i-close"/></svg></button>
+      <span id="sel-count" class="sel-count">0 ausgewählt</span>
+      <span class="spacer"></span>
+      <button class="btn small" id="sel-all">Alle</button>
+      <button class="icon-btn" id="sel-fav" title="Favorit an/aus"><svg><use href="#i-star"/></svg></button>
+      <button class="icon-btn" id="sel-move" title="In Ordner verschieben"><svg><use href="#i-folder"/></svg></button>
+      <button class="icon-btn" id="sel-restore" title="Wiederherstellen" hidden><svg><use href="#i-undo"/></svg></button>
+      <button class="icon-btn danger" id="sel-delete" title="Löschen"><svg><use href="#i-trash"/></svg></button>
+    </header>
     <div class="home-head">
       <h1 id="folder-title">Alle Notizen</h1>
-      <div class="home-sub"><span id="note-count"></span><button id="sync-status" class="sync-status" title="Jetzt synchronisieren">Sync: nicht eingerichtet</button></div>
+      <div class="home-sub"><span id="note-count"></span><button class="btn small danger" id="btn-empty-trash" hidden>Papierkorb leeren</button><button id="sync-status" class="sync-status" title="Jetzt synchronisieren">Sync: nicht eingerichtet</button></div>
     </div>
     <div id="search-bar" hidden>
       <svg class="ico"><use href="#i-search"/></svg>
@@ -237,6 +247,18 @@
       <p id="login-status" class="muted"></p>
     </div>
 
+    <div class="set-row">Hochladen
+      <select id="set-schedule">
+        <option value="live">Sofort (jede Minute)</option>
+        <option value="every2h">Alle 2 Stunden</option>
+        <option value="daily">Einmal täglich</option>
+        <option value="manual">Nur manuell</option>
+      </select>
+    </div>
+    <div class="set-row" id="row-daily">Uhrzeit <input type="time" id="set-daily" value="16:00" class="time-input"></div>
+    <label class="set-row">Nur im WLAN <input type="checkbox" id="set-wifi" class="switch"></label>
+    <p class="muted small" id="schedule-hint">Die App lädt hoch, sobald sie zur geplanten Zeit (oder danach) geöffnet ist. „Jetzt synchronisieren“ geht jederzeit.</p>
+
     <h3 class="sec">Neue Notizen</h3>
     <div class="paper-pick" id="def-paper"></div>
     <div class="set-row">Schriftart <select id="def-font"></select></div>
@@ -250,7 +272,7 @@
     <label class="set-row">Mit dem Finger zeichnen <input type="checkbox" id="def-finger" class="switch"></label>
     <label class="set-row">Einfach lostippen schreibt ab dem Zeilenanfang <input type="checkbox" id="def-typing" class="switch"></label>
     <label class="set-row">Formen erkennen (Stift am Ende kurz halten) <input type="checkbox" id="def-shapes" class="switch"></label>
-    <label class="set-row">Automatisch synchronisieren <input type="checkbox" id="set-auto" class="switch"></label>
+
 
     <h3 class="sec">Darstellung</h3>
     <div class="seg" id="def-theme"><button type="button" data-v="system">System</button><button type="button" data-v="light">Hell</button><button type="button" data-v="dark">Dunkel</button></div>
@@ -319,8 +341,19 @@
 <dialog id="dlg-folder">
   <form method="dialog">
     <div class="dlg-head"><h2 id="folder-dlg-title">Neuer Ordner</h2><button class="icon-btn" value="cancel"><svg><use href="#i-close"/></svg></button></div>
-    <label>Name<input id="folder-name" placeholder="z. B. Mathe" autocomplete="off"></label>
+    <label>Name<input id="folder-name" placeholder="z. B. Mathe" autocomplete="off" list="folder-datalist"></label>
     <div class="row end"><button class="btn primary" value="ok" id="folder-ok">Anlegen</button></div>
+  </form>
+</dialog>
+
+<dialog id="dlg-confirm">
+  <form method="dialog">
+    <h2 id="confirm-title">Sicher?</h2>
+    <p id="confirm-text" class="muted"></p>
+    <div class="row end">
+      <button class="btn" value="cancel">Abbrechen</button>
+      <button class="btn primary" value="ok" id="confirm-ok">OK</button>
+    </div>
   </form>
 </dialog>
 

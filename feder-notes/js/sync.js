@@ -4,7 +4,7 @@
 // Wurde dieselbe Notiz auf zwei Geräten geändert, gewinnt die neuere – die andere wird
 // als "Konflikt"-Kopie behalten, damit nie etwas verloren geht.
 import { db, uid, pageAssets } from './db.js';
-import { ncSync, ncTest } from './nextcloud.js';
+import { ncSync, ncTest, notePayload } from './nextcloud.js';
 
 export class Sync {
   constructor({ getNotes, onRemoteNote, onStatus }) {
@@ -117,7 +117,7 @@ export class Sync {
         // in Paketen senden, damit große Notizbücher nicht an Größenlimits scheitern
         for (let i = 0; i < dirty.length; i += 20) {
           const batch = dirty.slice(i, i + 20);
-          const payload = batch.map(({ dirty: _d, ...n }) => n);
+          const payload = batch.map(n => notePayload(n));
           const pr = await this.api('/api/notes', {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ notes: payload }),
           });

@@ -62,6 +62,21 @@ In deiner Nextcloud entsteht der Ordner `FederNotes` mit diesen Dateien:
 
 Wird dieselbe Notiz auf zwei Geräten gleichzeitig geändert, bleiben beide Versionen erhalten.
 
+**Wann wird hochgeladen?** Das stellst du unter ⚙ → Nextcloud → „Hochladen“ ein:
+
+| Einstellung | Wann |
+|---|---|
+| Sofort | jede Minute |
+| Alle 2 Stunden | Standard |
+| Einmal täglich | zu einer Uhrzeit deiner Wahl, z. B. 16:00 nach der Schule |
+| Nur manuell | nur wenn du es auslöst |
+
+Zusätzlich gibt es „Nur im WLAN“.
+
+Die App gleicht ab, sobald sie zur geplanten Zeit oder danach geöffnet ist. Wenn die App geschlossen ist, kann Android sie nicht im Hintergrund laufen lassen. Mit „Jetzt synchronisieren“ oder <kbd>Strg</kbd>+<kbd>S</kbd> gleichst du jederzeit sofort ab.
+
+**Notizen löschen:** In der Übersicht eine Notiz **lange drücken**. Dann weitere antippen oder „Alle“ wählen und auf 🗑 tippen; die Notizen landen im Papierkorb. Im Papierkorb kannst du sie wiederherstellen, endgültig löschen oder alles auf einmal mit „Papierkorb leeren“ entfernen. Die Löschung wird auch in der Nextcloud übernommen. Ebenfalls über die Auswahl: Favorit setzen und in einen Ordner verschieben.
+
 ## Stift wie bei Samsung Notes
 
 - **Stiftarten:** Tippe auf den aktiven Stift, um zwischen **Füller**, **Kuli**, **Bleistift** (mit Körnung) und **Kalligrafie** (schräge Feder) zu wählen. Jede Stiftart merkt sich ihre eigene Farbe und Stärke. Eine Vorschau zeigt, wie der Strich aussieht.
