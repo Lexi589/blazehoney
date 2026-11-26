@@ -835,7 +835,7 @@ export class Editor {
     data.strokes.forEach(st => st.points.forEach(p => { p[0] += offset; p[1] += offset; }));
     data.images.forEach(im => { im.id = uid(); im.x += offset; im.y += offset; });
     data.audios.forEach(au => { au.id = uid(); au.x += offset; au.y += offset; });
-    data.texts = (data.texts || []).map(t => ({ ...t, id: uid(), x: t.x + offset, y: Math.round((t.y + offset) / LINE) * LINE }));
+    data.texts = (data.texts || []).map(t => ({ ...t, id: uid(), x: t.x + offset, y: t.free ? t.y + offset : Math.round((t.y + offset) / LINE) * LINE }));
     data.formulas = (data.formulas || []).map(f => ({ ...f, id: uid(), x: f.x + offset, y: f.y + offset }));
     const before = snapObjs(pv);
     pv.data.strokes.push(...data.strokes);
@@ -1342,7 +1342,7 @@ export class Editor {
   }
 
   buildTextBox(pv, t) {
-    t.y = Math.max(0, Math.round(t.y / LINE) * LINE);   // ältere Notizen an die Linien anpassen
+    if (!t.free) t.y = Math.max(0, Math.round(t.y / LINE) * LINE);   // ältere Notizen an die Linien anpassen (importierte Felder liegen frei)
     const wrap = document.createElement('div');
     wrap.className = 'tb';
     wrap.style.left = t.x + 'px';
@@ -1535,7 +1535,7 @@ export class Editor {
 
   endTextDrag() {
     const t = this.textDrag.wrap._t;
-    t.y = Math.round(t.y / LINE) * LINE;   // an Linien einrasten
+    if (!t.free) t.y = Math.round(t.y / LINE) * LINE;   // an Linien einrasten
     this.styleBox(this.textDrag.wrap);
     this.textDrag = null;
     this.changed();
@@ -1926,7 +1926,8 @@ function transformSel(sel, fn, scale) {
   for (const au of sel.audios) { const [x, y] = fn([au.x + 60, au.y + 20]); au.x = Math.round(x - 60); au.y = Math.round(y - 20); }
   for (const t of sel.texts || []) {
     const [x, y] = fn([t.x + (t._w || 200) / 2, t.y + (t._h || 40) / 2]);
-    t.x = Math.round(x - (t._w || 200) / 2); t.y = Math.max(0, Math.round((y - (t._h || 40) / 2) / LINE) * LINE);
+    t.x = Math.round(x - (t._w || 200) / 2);
+    t.y = Math.max(0, t.free ? Math.round(y - (t._h || 40) / 2) : Math.round((y - (t._h || 40) / 2) / LINE) * LINE);
   }
   for (const f of sel.formulas || []) {
     const [x, y] = fn([f.x, f.y]);

@@ -2,6 +2,7 @@
 import { db, uid, pageAssets } from './db.js';
 import { PAGE_W, A4_H, newPage } from './editor.js';
 import { textToHTML } from './sanitize.js';
+import { readSdocx } from './sdocx.js';
 
 // Mitgelieferte Bibliotheken (pdf.js 3.11.174, JSZip 3.10.1) – funktionieren auch offline
 const PDFJS = 'vendor/pdf.min.js';
@@ -43,11 +44,11 @@ export async function fileToPages(file, progress = () => {}) {
 export async function importFileAsNote(file, folder, progress) {
   const pages = await fileToPages(file, progress);
   const now = Date.now();
-  const title = file.name.replace(/\.[^.]+$/, '')
+  const title = pages.title || file.name.replace(/\.[^.]+$/, '')
     .replace(/_\d{6}_\d{6}$/, '')          // Samsung-Zeitstempel (JJMMTT_HHMMSS) entfernen
     .replace(/[_]+/g, ' ').trim() || 'Import';
   return {
-    id: uid(), title, folder: folder || '', paper: 'lined', pages,
+    id: uid(), title, folder: folder || '', paper: pages.paper || 'lined', pages: [...pages],
     createdAt: file.lastModified || now, updatedAt: now, deleted: false, dirty: true,
   };
 }
@@ -111,7 +112,6 @@ async function imageToPage(blob) {
 
 const CHARS_PER_LINE = 62;   // ca. Zeichen pro Zeile bei Textfeldbreite 840 und 24px Schrift
 const LINES_PER_PAGE = 30;
-export const SDOCX_TEXT_MARK = 'Aus Samsung Notes übernommener Text';
 
 function textToPages(text) {
   // Absätze auf A4-Seiten verteilen; lange Absätze zählen als mehrere Zeilen
@@ -133,14 +133,10 @@ function textToPages(text) {
   return pages;
 }
 
-const pause = () => new Promise(r => setTimeout(r, 0));   // Oberfläche zwischendurch reagieren lassen
 
 /* ---------------- Samsung Notes (.sdocx) ---------------- */
-// .sdocx ist ein ZIP-Container mit proprietären Binärdateien. Handschrift-Striche (*.page) und
-// Seitenbilder (*.spi) sind in einem nicht dokumentierten Samsung-Format. Übernommen werden
-// eingefügte Bilder/Scans und getippter Text.
-
-const MAX_TEXT = 60_000;   // Schutz: niemals Megabytes an "Text" erzeugen
+// .sdocx ist ein ZIP-Container. Handschrift, getippter Text (mit Absätzen, Listen, Farben), Tabellen und
+// eingefügte Bilder werden übernommen (siehe sdocx.js).
 
 async function sdocxToPages(file, progress) {
   await loadScript(JSZIP);
@@ -148,90 +144,17 @@ async function sdocxToPages(file, progress) {
   let zip;
   try { zip = await window.JSZip.loadAsync(file); }
   catch { throw new Error(`${file.name} ist keine gültige .sdocx-Datei (evtl. verschlüsselt/gesperrte Notiz).`); }
-
-  const entries = Object.values(zip.files).filter(f => !f.dir);
-  const images = entries.filter(f => /\.(png|jpe?g|webp|bmp|gif)$/i.test(f.name) && !/thumbnail|thumb_/i.test(f.name));
-  const thumbs = entries.filter(f => /\.(png|jpe?g|webp)$/i.test(f.name) && /thumbnail|thumb_/i.test(f.name));
-  const pages = [];
-
-  // 1. Eingefügte Bilder / Scans
-  const pick = images.length ? images : thumbs;
-  let n = 0;
-  for (const f of pick) {
-    progress(`${file.name}: Bild ${++n} / ${pick.length}`);
-    const data = await f.async('uint8array');
-    if (data.length < 4000) continue;     // Icons & Mini-Vorschauen überspringen
-    const type = /\.png$/i.test(f.name) ? 'image/png' : /\.webp$/i.test(f.name) ? 'image/webp' : 'image/jpeg';
-    try { pages.push(await imageToPage(new Blob([data], { type }))); } catch { /* kaputtes Bild */ }
-    await pause();
+  const pages = await readSdocx(zip, { name: file.name, progress, storeImage: storeAsset });
+  pages.paper = 'blank';
+  if (!pages.some(p => p.strokes.length || p.texts.length || (p.images && p.images.length))) {
+    const hint = newPage();
+    hint.texts.push({
+      id: uid(), x: 100, y: 82, w: 820,
+      html: textToHTML(`In „${file.name}“ wurde nichts Lesbares gefunden (evtl. eine neuere Samsung-Version oder eine gesperrte Notiz).\n\nAlternative: In Samsung Notes die Notiz öffnen → ⋮ → Als Datei speichern → PDF und die PDF hier importieren.`),
+    });
+    pages.push(hint);
   }
-
-  // 2. Getippter Text (UTF-16 in note.note und den Seitendateien), streng gefiltert
-  const sources = entries.filter(f => /\.(note|page)$/i.test(f.name))
-    .sort((a, b) => (b.name.endsWith('.note') ? 1 : 0) - (a.name.endsWith('.note') ? 1 : 0));
-  const seen = new Set();
-  const chunks = [];
-  let total = 0;
-  n = 0;
-  for (const f of sources) {
-    if (total >= MAX_TEXT) break;
-    progress(`${file.name}: Text suchen ${++n} / ${sources.length}`);
-    const bytes = await f.async('uint8array');
-    for (const s of await extractText(bytes)) {
-      const key = s.toLowerCase();
-      if (seen.has(key) || total >= MAX_TEXT) continue;
-      // Bruchstücke, die schon in einem längeren Text enthalten sind, weglassen
-      if (chunks.some(c => c.toLowerCase().includes(key))) continue;
-      seen.add(key); chunks.push(s); total += s.length;
-    }
-    await pause();
-  }
-
-  if (chunks.length) {
-    const tp = textToPages(chunks.join('\n'));
-    tp[0].texts[0].html = `<div><b>${SDOCX_TEXT_MARK} (ohne Handschrift):</b></div>` + tp[0].texts[0].html;
-    pages.push(...tp);
-  }
-  const hint = newPage();
-  hint.texts.push({
-    id: uid(), x: 100, y: 82, w: 820,
-    html: textToHTML(`Hinweis zu „${file.name}“:\nHandschrift aus Samsung Notes ist in einem geheimen Format gespeichert und kann nicht direkt übernommen werden.\n\nDamit alles 1:1 erhalten bleibt (Handschrift, Zeichnungen, Layout):\nIn Samsung Notes die Notiz öffnen → ⋮ → Als Datei speichern → PDF\nund die PDF hier importieren. Danach kannst du auf den Seiten weiterschreiben.`),
-  });
-  pages.push(hint);
   return pages;
-}
-
-const TEXT_OK = new Set([...'ÄÖÜäöüßéèêàâçñ€–—„“”‚‘’…•·°²³']);
-
-/** Sucht lesbaren Text (UTF-16LE) in Binärdaten – an geraden und ungeraden Byte-Positionen. */
-async function extractText(bytes) {
-  const out = [];
-  for (const off of [0, 1]) {
-    let cur = '';
-    const flush = () => {
-      const s = cur.replace(/\s+/g, ' ').trim();
-      cur = '';
-      if (s.length < 4 || s.length > 4000) return;
-      const letters = (s.match(/[A-Za-zÄÖÜäöüß]/g) || []).length;
-      if (letters / s.length < 0.65) return;
-      // echte Wörter: Großbuchstabe/Kleinbuchstabe gefolgt von mind. 2 Kleinbuchstaben
-      const words = s.split(' ').filter(w => /^[(\-–•„"]*[A-Za-zÄÖÜäöüß][a-zäöüß]{2,}[.,:;!?)"“]*$/.test(w)).length;
-      const tokens = s.split(' ').length;
-      if (words >= 2 && words / tokens >= 0.5) out.push(s);
-      else if (tokens === 1 && /^[A-ZÄÖÜ][a-zäöüß]{3,}$/.test(s)) out.push(s);   // einzelne Überschrift wie "Genetik"
-    };
-    for (let i = off; i + 1 < bytes.length; i += 2) {
-      const c = bytes[i] | (bytes[i + 1] << 8);
-      if ((c >= 0x20 && c < 0x7f) || (c >= 0xa0 && TEXT_OK.has(String.fromCharCode(c)))) {
-        cur += String.fromCharCode(c);
-        if (cur.length > 4000) flush();
-      } else if (c === 0x0a || c === 0x0d || c === 0x2029) cur += ' ';
-      else if (cur) flush();
-      if ((i & 0x3fffff) === off) await pause();   // alle ~4 MB kurz Luft holen
-    }
-    flush();
-  }
-  return out;
 }
 
 /* ---------------- Backup ---------------- */

@@ -21,15 +21,23 @@ Alle Tastenkürzel zeigt die App mit <kbd>?</kbd> an.
 
 ## Deine Samsung-Notes-Dateien aus der Schule übernehmen
 
-**Empfohlener Weg: Export als PDF.** Dabei bleibt deine Handschrift exakt erhalten, und du kannst direkt darauf weiterschreiben.
+**Direkt als `.sdocx`:** In Samsung Notes die Notizen auswählen, **Als Datei speichern → Samsung Notes-Datei (.sdocx)** wählen und die Dateien in Feder Notes über **Importieren** öffnen. Übernommen werden:
+
+- deine Handschrift (Farbe, Stiftbreite und Druck), an derselben Stelle wie in Samsung Notes
+- getippter Text mit Absätzen, Aufzählungen, nummerierten Listen, Einzügen, zentrierten Zeilen, Farben, fett/unterstrichen und Schriftgrößen
+- Tabellen (auch über einen Seitenwechsel hinweg)
+- eingefügte Bilder und Scans, auch zugeschnittene
+- die Seitenreihenfolge und der Titel der Notiz
+
+Der Text landet in frei liegenden Textfeldern, die du ganz normal bearbeiten kannst. Das Format von Samsung ist nicht offen dokumentiert. Die Abstände wurden an echten Notizen nachgemessen, daher kann eine Zeile vereinzelt etwas versetzt sein.
+
+**Alternative: Export als PDF.** Dann ist alles pixelgenau, aber der Text ist nicht mehr bearbeitbar.
 
 1. In Samsung Notes eine Notiz lange gedrückt halten und weitere Notizen dazu auswählen.
 2. Auf **Als Datei speichern** (bzw. **Teilen → Datei**) tippen und **PDF** wählen.
-3. In Feder Notes auf **Importieren** gehen, alle PDFs auswählen und einen Ordner bzw. ein Fach angeben (z. B. „Mathe“).
+3. In Feder Notes auf **Importieren** gehen, alle Dateien auswählen und einen Ordner bzw. ein Fach angeben (z. B. „Mathe“).
 
-Jede PDF wird zu einer eigenen Notiz. Jede PDF-Seite wird zu einer Seite, auf der du mit dem Stift und der Tastatur weiterarbeiten kannst. Am PC kannst du Dateien auch einfach ins Fenster ziehen.
-
-**`.sdocx`-Dateien** (das eigene Format von Samsung Notes) werden ebenfalls gelesen. Weil das Format nicht offen dokumentiert ist, lassen sich daraus nur eingebettete Bilder und Text übernehmen. Reine Handschrift-Striche gehen dabei verloren. Für Notizen mit Handschrift solltest du daher den PDF-Weg nehmen.
+Jede Datei wird zu einer eigenen Notiz, auf deren Seiten du mit Stift und Tastatur weiterarbeiten kannst. Am PC kannst du Dateien auch einfach ins Fenster ziehen.
 
 Außerdem kannst du Bilder (Fotos von der Tafel), `.txt`/`.md`-Dateien und Feder-Backups (`.json`) importieren.
 Über **⋯ → PDF / Bild in diese Notiz einfügen** fügst du z. B. ein Arbeitsblatt in eine bestehende Notiz ein.
@@ -132,7 +140,7 @@ Die Leiste darüber bietet:
 **In Formel / In Text umwandeln:** Umkreise deine Handschrift mit dem Lasso und tippe auf „In Formel“ oder „In Text“. Danach siehst du eine Vorschau. Formeln erscheinen als sauber gesetzte Formel und lassen sich als LaTeX korrigieren. Mit „Handschrift ersetzen“ oder „Zusätzlich einfügen“ übernimmst du das Ergebnis. Eine eingefügte Formel tippst du an, um sie zu bearbeiten.
 
 So richtest du die Erkennung ein:
-1. Die Erkennung nutzt die KI Claude (Modell Claude Opus 5.5) über die Anthropic-API. Dafür brauchst du einen eigenen API-Schlüssel: auf console.anthropic.com ein Konto anlegen, Guthaben aufladen und unter „API Keys“ einen Schlüssel erstellen.
+1. Die Erkennung nutzt die KI Claude über die Anthropic-API. Dafür brauchst du einen eigenen API-Schlüssel: auf console.anthropic.com ein Konto anlegen, Guthaben aufladen und unter „API Keys“ einen Schlüssel erstellen.
 2. Trage den Schlüssel unter ⚙ → „Handschrift-Erkennung“ ein.
 
 Eine Umwandlung kostet etwa 1 Cent. Der Schlüssel bleibt nur auf diesem Gerät und wird nicht synchronisiert. Ohne Internet ist die Erkennung nicht möglich.
@@ -210,7 +218,8 @@ feder-notes/
   index.html, css/app.css   Oberfläche
   js/editor.js              Seiten, Handschrift (Druck, Glättung), Radierer, Lasso, Textfelder, Gesten
   js/app.js                 Notizliste, Ordner, Suche, Tastenkürzel, Import-Dialog
-  js/import.js              PDF (pdf.js), .sdocx (JSZip), Bilder, Text, Backup
+  js/import.js              PDF (pdf.js), Bilder, Text, Backup
+  js/sdocx.js               Samsung Notes (.sdocx): Handschrift, Text, Tabellen, Bilder
   js/sync.js                Synchronisation mit Konfliktbehandlung
   js/nextcloud.js           Speicherung in Nextcloud (WebDAV, App-Passwort, ETags)
   js/transport.js           HTTP über Electron/Android nativ (umgeht Browser-Sperren)

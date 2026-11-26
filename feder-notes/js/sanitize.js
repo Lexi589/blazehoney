@@ -1,7 +1,8 @@
 // Erlaubt nur harmlose Formatierungen in Textfeldern (Schutz vor eingeschleustem HTML aus Sync/Import).
 const ALLOWED = new Set(['B', 'STRONG', 'I', 'EM', 'U', 'S', 'STRIKE', 'MARK', 'BR', 'DIV', 'P', 'SPAN', 'UL', 'OL', 'LI', 'H1', 'H2', 'H3', 'SUB', 'SUP', 'TABLE', 'TBODY', 'THEAD', 'TR', 'TD', 'TH']);
 // Nur diese Formatierungen dürfen als style-Attribut bleiben (Word-ähnliche Textformatierung)
-const STYLE_PROPS = new Set(['color', 'background-color', 'font-weight', 'font-style', 'text-decoration', 'text-decoration-line', 'text-align', 'margin-left']);
+const STYLE_PROPS = new Set(['color', 'background-color', 'font-weight', 'font-style', 'text-decoration', 'text-decoration-line', 'text-align', 'margin-left',
+  'font-size', 'line-height', 'width', 'height', 'vertical-align', 'padding']);
 const SAFE_VALUE = /^[#\w\s(),.%-]{1,60}$/;
 
 function cleanStyle(style) {
