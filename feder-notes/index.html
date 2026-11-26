@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#f4f4f6" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#121214" media="(prefers-color-scheme: dark)">
+  <title>Feder Notes</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body class="view-home">
+
+<!-- Symbole (eigene, schlichte Linien-Icons) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="12" cy="5.5" r="1.3" class="f"/><circle cx="12" cy="12" r="1.3" class="f"/><circle cx="12" cy="18.5" r="1.3" class="f"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 7L4.5 11.5 9 16"/><path d="M5 11.5h9a5 5 0 010 10h-2"/></symbol>
+    <symbol id="i-redo" viewBox="0 0 24 24"><path d="M15 7l4.5 4.5L15 16"/><path d="M19 11.5h-9a5 5 0 000 10h2"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="9" cy="17" r="2.2"/></symbol>
+    <symbol id="i-import" viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5"/><path d="M4.5 16v3.5h15V16"/></symbol>
+    <symbol id="i-sync" viewBox="0 0 24 24"><path d="M19 8a7.5 7.5 0 00-13.3-1.7M5 16a7.5 7.5 0 0013.3 1.7"/><path d="M19 3.5V8h-4.5M5 20.5V16h4.5"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.5 7a2 2 0 012-2h4l2 2.2h7a2 2 0 012 2V17a2 2 0 01-2 2h-13a2 2 0 01-2-2z"/></symbol>
+    <symbol id="i-notes" viewBox="0 0 24 24"><rect x="5" y="3.5" width="14" height="17" rx="2.5"/><path d="M8.5 8.5h7M8.5 12h7M8.5 15.5h4"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4.5 7h15M9.5 7V4.8h5V7M6.5 7l1 13h9l1-13"/></symbol>
+    <symbol id="i-text" viewBox="0 0 24 24"><path d="M5 6.5V5h14v1.5M12 5v14M9 19h6"/></symbol>
+    <symbol id="i-pen" viewBox="0 0 24 24"><path d="M14.5 5.5l4 4L9 19l-5 1 1-5z"/><path d="M12.5 7.5l4 4"/></symbol>
+    <symbol id="i-fountain" viewBox="0 0 24 24"><path d="M12 2.8l4.2 7.4-2.4 7.3h-3.6l-2.4-7.3z"/><path d="M12 2.8v8"/><circle cx="12" cy="11.8" r="1" class="f"/><path d="M10 20.5h4"/></symbol>
+    <symbol id="i-ball" viewBox="0 0 24 24"><path d="M9.5 3h5v12l-2.5 5.5L9.5 15z"/><path d="M9.5 15h5"/></symbol>
+    <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M9.5 3h5v13l-2.5 4.5L9.5 16z"/><path d="M9.5 16h5M11.2 19h1.6"/><path d="M9.5 6h5"/></symbol>
+    <symbol id="i-calli" viewBox="0 0 24 24"><path d="M10 3h4v9l2 3-4 6-4-6 2-3z"/><path d="M12 15v6"/></symbol>
+    <symbol id="i-marker" viewBox="0 0 24 24"><path d="M9 3h6v8l1.5 2v3h-9v-3L9 11z"/><path d="M10 16v4.5l4-1.8V16"/></symbol>
+    <symbol id="i-eraser" viewBox="0 0 24 24"><path d="M14.5 4.5l5 5-9 9H6l-2.5-2.5z"/><path d="M9.5 9.5l5 5M10.5 18.5H20"/></symbol>
+    <symbol id="i-lasso" viewBox="0 0 24 24"><ellipse cx="12" cy="9.5" rx="8" ry="5.5" stroke-dasharray="2.6 2.4"/><path d="M8 14.5c-1 2 0 4 2 4.5"/></symbol>
+    <symbol id="i-al" viewBox="0 0 24 24"><path d="M4 6h16M4 10h10M4 14h16M4 18h10"/></symbol>
+    <symbol id="i-ac" viewBox="0 0 24 24"><path d="M4 6h16M7 10h10M4 14h16M7 18h10"/></symbol>
+    <symbol id="i-ar" viewBox="0 0 24 24"><path d="M4 6h16M10 10h10M4 14h16M10 18h10"/></symbol>
+    <symbol id="i-ul" viewBox="0 0 24 24"><circle cx="5" cy="7" r="1.2" class="f"/><circle cx="5" cy="12" r="1.2" class="f"/><circle cx="5" cy="17" r="1.2" class="f"/><path d="M9 7h11M9 12h11M9 17h11"/></symbol>
+    <symbol id="i-ol" viewBox="0 0 24 24"><path d="M4 5h1.5v4M4 9h3M4 14.5c0-1 2.8-1 2.8.3 0 .9-2.8 1.8-2.8 3.2h3M10 7h10M10 12h10M10 17h10"/></symbol>
+    <symbol id="i-cbox" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M8 12.5l2.7 2.7L16 9.5"/></symbol>
+    <symbol id="i-clear" viewBox="0 0 24 24"><path d="M6 5h12M12 5l-3 14M4 20l16-16"/></symbol>
+    <symbol id="i-page" viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2.5"/><path d="M9 8h6M9 12h6"/></symbol>
+    <symbol id="i-keyboard" viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6 9.5h.01M9.3 9.5h.01M12.6 9.5h.01M15.9 9.5h.01M18 9.5h.01M6 12.5h.01M9.3 12.5h.01M12.6 12.5h.01M15.9 12.5h.01M18 12.5h.01M8 15.3h8"/></symbol>
+    <symbol id="i-textbox" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="2.5" stroke-dasharray="2.4 2"/><path d="M8.5 9h7M12 9v7"/></symbol>
+    <symbol id="i-indent" viewBox="0 0 24 24"><path d="M10 6h10M10 10h10M10 14h10M4 18h16M4 8.5l3 2-3 2"/></symbol>
+    <symbol id="i-outdent" viewBox="0 0 24 24"><path d="M10 6h10M10 10h10M10 14h10M4 18h16M7 8.5l-3 2 3 2"/></symbol>
+    <symbol id="i-para" viewBox="0 0 24 24"><path d="M14 4v16M18 4v16M18 4h-7.5a4 4 0 000 8H14"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="2.5"/><circle cx="9" cy="10" r="1.6"/><path d="M4 17l5-4.5 4 3.5 3-2.5 4 3.5"/></symbol>
+    <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8.5h3.2L9 6h6l1.8 2.5H20a1 1 0 011 1V18a1 1 0 01-1 1H4a1 1 0 01-1-1V9.5a1 1 0 011-1z"/><circle cx="12" cy="13.3" r="3.3"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3.5" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0012 0M12 17v3.5"/></symbol>
+    <symbol id="i-sticky" viewBox="0 0 24 24"><path d="M5 4.5h14v9.5L14 19H5z"/><path d="M14 19v-5h5"/></symbol>
+    <symbol id="i-table" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M3.5 10h17M3.5 14.5h17M10 5v14"/></symbol>
+    <symbol id="i-pdf" viewBox="0 0 24 24"><path d="M6 3.5h8l4 4V20a.5.5 0 01-.5.5h-11.5A.5.5 0 015.5 20V4a.5.5 0 01.5-.5z"/><path d="M14 3.5V8h4M8.5 13h1.2a1.2 1.2 0 010 2.4H8.5V11.5M13 15.5v-4h1a2 2 0 010 4h-1z"/></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 3.8l2.5 5.2 5.6.7-4.1 3.9 1 5.6-5-2.7-5 2.7 1-5.6L3.9 9.7l5.6-.7z"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+  </defs>
+</svg>
+
+<div id="app">
+  <!-- ============ Übersicht ============ -->
+  <section id="home" aria-label="Notizen">
+    <header class="home-bar">
+      <button class="icon-btn" id="btn-drawer" title="Ordner"><svg><use href="#i-menu"/></svg></button>
+      <span class="spacer"></span>
+      <button class="icon-btn" id="btn-search" title="Suchen (Strg+F)"><svg><use href="#i-search"/></svg></button>
+      <button class="icon-btn" id="btn-import" title="Importieren (PDF, Samsung Notes, Bilder)"><svg><use href="#i-import"/></svg></button>
+      <button class="icon-btn" id="btn-settings" title="Einstellungen &amp; Nextcloud"><svg><use href="#i-settings"/></svg></button>
+    </header>
+    <header class="home-bar select-bar" id="select-bar" hidden>
+      <button class="icon-btn" id="sel-cancel" title="Auswahl beenden"><svg><use href="#i-close"/></svg></button>
+      <span id="sel-count" class="sel-count">0 ausgewählt</span>
+      <span class="spacer"></span>
+      <button class="btn small" id="sel-all">Alle</button>
+      <button class="icon-btn" id="sel-fav" title="Favorit an/aus"><svg><use href="#i-star"/></svg></button>
+      <button class="icon-btn" id="sel-move" title="In Ordner verschieben"><svg><use href="#i-folder"/></svg></button>
+      <button class="icon-btn" id="sel-restore" title="Wiederherstellen" hidden><svg><use href="#i-undo"/></svg></button>
+      <button class="icon-btn danger" id="sel-delete" title="Löschen"><svg><use href="#i-trash"/></svg></button>
+    </header>
+    <div class="home-head">
+      <h1 id="folder-title">Alle Notizen</h1>
+      <div class="home-sub"><span id="note-count"></span><button class="btn small danger" id="btn-empty-trash" hidden>Papierkorb leeren</button><button id="sync-status" class="sync-status" title="Jetzt synchronisieren">Sync: nicht eingerichtet</button></div>
+    </div>
+    <div id="search-bar" hidden>
+      <svg class="ico"><use href="#i-search"/></svg>
+      <input id="search" type="search" placeholder="In allen Notizen suchen" autocomplete="off">
+      <button class="icon-btn small" id="btn-search-close" title="Suche schließen"><svg><use href="#i-close"/></svg></button>
+    </div>
+    <button id="connect-banner" class="banner" hidden>
+      <svg class="ico"><use href="#i-sync"/></svg>
+      <span><strong>Mit Nextcloud verbinden</strong><br><small>Notizen auf allen Geräten aktuell halten</small></span>
+    </button>
+    <div id="note-grid" role="list"></div>
+    <button id="fab-new" class="fab" title="Neue Notiz (Alt+N)"><svg><use href="#i-plus"/></svg></button>
+  </section>
+
+  <!-- ============ Editor ============ -->
+  <section id="editor" aria-label="Notiz">
+    <header class="edit-bar">
+      <button class="icon-btn" id="btn-back" title="Zurück zur Übersicht"><svg><use href="#i-back"/></svg></button>
+      <input id="note-title" placeholder="Titel" autocomplete="off" spellcheck="false">
+      <button class="icon-btn" id="btn-undo" title="Rückgängig (Strg+Z)"><svg><use href="#i-undo"/></svg></button>
+      <button class="icon-btn" id="btn-redo" title="Wiederholen (Strg+Y)"><svg><use href="#i-redo"/></svg></button>
+      <div class="menu-wrap">
+        <button class="icon-btn" id="btn-insert" title="Einfügen"><svg><use href="#i-plus"/></svg></button>
+        <div class="menu" id="insert-menu" hidden>
+          <button data-ins="pdf"><svg><use href="#i-pdf"/></svg>PDF / Bild als Seite</button>
+          <button data-ins="audio"><svg><use href="#i-mic"/></svg>Sprachaufnahme</button>
+          <hr>
+          <button data-ins="image"><svg><use href="#i-image"/></svg>Bild</button>
+          <button data-ins="camera"><svg><use href="#i-camera"/></svg>Kamera</button>
+          <button data-ins="sticky"><svg><use href="#i-sticky"/></svg>Haftnotiz</button>
+          <button data-ins="table"><svg><use href="#i-table"/></svg>Tabelle</button>
+          <button data-ins="page"><svg><use href="#i-page"/></svg>Neue Seite</button>
+        </div>
+      </div>
+      <div class="menu-wrap">
+        <button class="icon-btn" id="btn-more" title="Mehr"><svg><use href="#i-more"/></svg></button>
+        <div class="menu" id="more-menu" hidden>
+          <button data-act="note-settings">Notizstil (Papier, Farbe, Schrift)</button>
+          <button data-act="fav" id="menu-fav">Zu Favoriten</button>
+          <button data-act="paste">Einfügen (Strg+V)</button>
+          <label class="menu-row">Ordner <select id="note-folder"></select></label>
+          <button data-act="add-page">Neue Seite</button>
+          <button data-act="insert-file">PDF / Bild einfügen</button>
+          <button data-act="print">Als PDF speichern / drucken</button>
+          <label class="menu-row switch-row">Mit dem Finger zeichnen <input type="checkbox" id="opt-finger" class="switch"></label>
+          <button data-act="settings">Allgemeine Einstellungen</button>
+          <button data-act="shortcuts">Tastenkürzel</button>
+          <hr>
+          <button data-act="delete" class="danger">In den Papierkorb</button>
+        </div>
+      </div>
+    </header>
+
+    <div id="toolbar" role="toolbar">
+      <div class="tools">
+        <button class="tool" data-tool="keyboard" title="Tastatur (Alt+5): schreibt ab dem Zeilenanfang – oder einfach lostippen"><svg><use href="#i-keyboard"/></svg></button>
+        <button class="tool" data-tool="pen" title="Stift (Alt+1) – nochmal tippen für Stiftart &amp; Stärke"><svg><use href="#i-fountain"/></svg></button>
+        <button class="tool" data-tool="highlighter" title="Textmarker (Alt+2)"><svg><use href="#i-marker"/></svg></button>
+        <button class="tool" data-tool="eraser" title="Radierer (Alt+3) – auch S-Pen-Taste"><svg><use href="#i-eraser"/></svg></button>
+        <button class="tool" data-tool="lasso" title="Auswählen (Alt+4)"><svg><use href="#i-lasso"/></svg></button>
+        <button class="tool" data-tool="text" title="Freies Textfeld (Alt+6): antippen, wo es hin soll"><svg><use href="#i-textbox"/></svg></button>
+      </div>
+      <span class="tb-sep"></span>
+      <div id="colors" class="colors" title="Farbe – aktive Farbe nochmal tippen zum Ändern"></div>
+      <span class="tb-sep"></span>
+      <div id="widths" class="widths" title="Strichstärke"></div>
+    </div>
+
+    <div id="formatbar" role="toolbar" aria-label="Textformat" hidden>
+      <select id="fmt-block" class="fmt-select" title="Formatvorlage">
+        <option value="div">Standard</option><option value="h2">Überschrift 1</option><option value="h3">Überschrift 2</option>
+      </select>
+      <select id="fmt-font" class="fmt-select" title="Schriftart"></select>
+      <select id="fmt-size" class="fmt-select narrow" title="Schriftgröße (Strg+Umschalt+&lt; / &gt;)"></select>
+      <span class="tb-sep"></span>
+      <button class="fmt" data-cmd="bold" title="Fett (Strg+B)"><b>F</b></button>
+      <button class="fmt" data-cmd="italic" title="Kursiv (Strg+I)"><i>K</i></button>
+      <button class="fmt" data-cmd="underline" title="Unterstrichen (Strg+U)"><u>U</u></button>
+      <button class="fmt" data-cmd="strikeThrough" title="Durchgestrichen"><s>S</s></button>
+      <button class="fmt color" data-cmd="foreColor" title="Textfarbe"><span>A</span><i id="fmt-color-bar"></i></button>
+      <button class="fmt" data-cmd="mark" title="Markieren (Strg+Umschalt+H)"><svg><use href="#i-marker"/></svg></button>
+      <span class="tb-sep"></span>
+      <button class="fmt" data-cmd="justifyLeft" title="Linksbündig (Strg+L)"><svg><use href="#i-al"/></svg></button>
+      <button class="fmt" data-cmd="justifyCenter" title="Zentriert (Strg+E)"><svg><use href="#i-ac"/></svg></button>
+      <button class="fmt" data-cmd="justifyRight" title="Rechtsbündig (Strg+R)"><svg><use href="#i-ar"/></svg></button>
+      <span class="tb-sep"></span>
+      <button class="fmt" data-cmd="insertUnorderedList" title="Aufzählung (Strg+Umschalt+L oder „- “)"><svg><use href="#i-ul"/></svg></button>
+      <button class="fmt" data-cmd="insertOrderedList" title="Nummerierung (oder „1. “)"><svg><use href="#i-ol"/></svg></button>
+      <button class="fmt" data-cmd="checkbox" title="Checkbox (oder „[] “)"><svg><use href="#i-cbox"/></svg></button>
+      <button class="fmt" data-cmd="outdent" title="Einzug verkleinern (Umschalt+Tab)"><svg><use href="#i-outdent"/></svg></button>
+      <button class="fmt" data-cmd="indent" title="Einzug vergrößern (Tab)"><svg><use href="#i-indent"/></svg></button>
+      <span class="tb-sep"></span>
+      <button class="fmt wide" data-cmd="para" title="Absatz: Zeilenabstand, Abstand nach Absatz, Einzug bei Aufzählungen"><svg><use href="#i-para"/></svg>Absatz</button>
+      <button class="fmt wide only-table" data-cmd="rowAdd" title="Zeile darunter einfügen">+ Zeile</button>
+      <button class="fmt wide only-table" data-cmd="colAdd" title="Spalte rechts einfügen">+ Spalte</button>
+      <button class="fmt wide only-table" data-cmd="rowDel" title="Zeile löschen">− Zeile</button>
+      <button class="fmt wide only-table" data-cmd="colDel" title="Spalte löschen">− Spalte</button>
+      <button class="fmt wide only-box" data-cmd="box" title="Textfeld: Rahmen, Hintergrund, löschen"><svg><use href="#i-textbox"/></svg>Feld</button>
+      <button class="fmt" data-cmd="removeFormat" title="Formatierung entfernen"><svg><use href="#i-clear"/></svg></button>
+    </div>
+
+    <div id="trash-bar" hidden>
+      Diese Notiz liegt im Papierkorb.
+      <button class="btn small" id="btn-restore">Wiederherstellen</button>
+      <button class="btn small danger" id="btn-purge">Endgültig löschen</button>
+    </div>
+
+    <div id="pages" tabindex="-1"></div>
+    <button id="zoom-chip" hidden title="Zoom zurücksetzen">100 %</button>
+
+    <div id="empty-state">
+      <svg class="big"><use href="#i-notes"/></svg>
+      <h2>Keine Notiz geöffnet</h2>
+      <p>Wähle links eine Notiz oder lege mit <strong>+</strong> eine neue an.</p>
+    </div>
+  </section>
+</div>
+
+<!-- Ordner-Leiste -->
+<div id="scrim" hidden></div>
+<aside id="drawer" aria-label="Ordner">
+  <div class="drawer-head">
+    <img src="icons/icon.svg" alt=""> <strong>Feder Notes</strong>
+  </div>
+  <nav id="folders"></nav>
+  <button class="drawer-item add" id="btn-add-folder"><svg><use href="#i-plus"/></svg> Ordner anlegen</button>
+</aside>
+
+<!-- Werkzeug-Einstellungen (Stiftart, Stärke, Farben) -->
+<div id="popover" class="popover" hidden></div>
+
+<input type="file" id="file-input" multiple hidden
+       accept=".pdf,.sdocx,.png,.jpg,.jpeg,.webp,.gif,.txt,.md,.json,application/pdf,image/*,text/plain">
+<input type="color" id="color-native" hidden>
+<input type="file" id="img-input" accept="image/*" hidden>
+<input type="file" id="cam-input" accept="image/*" capture="environment" hidden>
+<div id="recbar" hidden><span class="dot"></span><span id="rec-time">0:00</span> Aufnahme läuft <button class="btn small" id="rec-stop">Stopp</button><button class="btn small" id="rec-cancel">Verwerfen</button></div>
+
+<!-- ============ Dialoge ============ -->
+<dialog id="dlg-settings">
+  <form method="dialog">
+    <div class="dlg-head"><h2>Einstellungen</h2><button class="icon-btn" value="cancel" title="Schließen"><svg><use href="#i-close"/></svg></button></div>
+    <h3 class="sec">Nextcloud</h3>
+
+    <div id="nc-connected" hidden>
+      <div class="connected-card">
+        <svg class="ico ok"><use href="#i-check"/></svg>
+        <div><strong id="nc-who"></strong><br><small id="nc-where" class="muted"></small></div>
+      </div>
+      <div class="row">
+        <button type="button" class="btn" id="btn-sync-now">Jetzt synchronisieren</button>
+        <button type="button" class="btn danger" id="btn-disconnect">Abmelden</button>
+      </div>
+    </div>
+
+    <div id="nc-login">
+      <p class="muted">Gib die Adresse deiner Nextcloud ein und tippe auf <strong>Anmelden</strong>. Es öffnet sich der Browser, dort bestätigst du den Zugriff – fertig. Ein Passwort musst du hier nicht eintippen.</p>
+      <label>Nextcloud-Adresse<input id="set-nc-url" type="url" inputmode="url" placeholder="cloud.example.de" autocomplete="url" autocapitalize="off" spellcheck="false"></label>
+      <button type="button" class="btn primary wide" id="btn-nc-login">Anmelden</button>
+      <p id="login-status" class="muted"></p>
+    </div>
+
+    <div class="set-row">Hochladen
+      <select id="set-schedule">
+        <option value="live">Sofort (jede Minute)</option>
+        <option value="every2h">Alle 2 Stunden</option>
+        <option value="daily">Einmal täglich</option>
+        <option value="manual">Nur manuell</option>
+      </select>
+    </div>
+    <div class="set-row" id="row-daily">Uhrzeit <input type="time" id="set-daily" value="16:00" class="time-input"></div>
+    <label class="set-row">Nur im WLAN <input type="checkbox" id="set-wifi" class="switch"></label>
+    <p class="muted small" id="schedule-hint">Die App lädt hoch, sobald sie zur geplanten Zeit (oder danach) geöffnet ist. „Jetzt synchronisieren“ geht jederzeit.</p>
+
+    <h3 class="sec">Neue Notizen</h3>
+    <div class="paper-pick" id="def-paper"></div>
+    <div class="set-row">Schriftart <select id="def-font"></select></div>
+    <div class="set-row">Schriftgröße <select id="def-size"></select></div>
+    <div class="set-row">Zeilenabstand <select id="def-spacing"><option value="1">1 Zeile</option><option value="2">2 Zeilen</option><option value="3">3 Zeilen</option></select></div>
+    <div class="set-row">Abstand nach Absatz <select id="def-para"><option value="0">Keiner</option><option value="1">1 Zeile</option></select></div>
+    <div class="set-row">Einzug bei Aufzählungen <select id="def-indent"><option value="24">Klein</option><option value="40">Mittel</option><option value="64">Groß</option><option value="96">Sehr groß</option></select></div>
+    <div class="set-row">Textfarbe <div class="mini-palette" id="def-color"></div></div>
+
+    <h3 class="sec">Bedienung</h3>
+    <label class="set-row">Mit dem Finger zeichnen <input type="checkbox" id="def-finger" class="switch"></label>
+    <label class="set-row">Einfach lostippen schreibt ab dem Zeilenanfang <input type="checkbox" id="def-typing" class="switch"></label>
+    <label class="set-row">Formen erkennen (Stift am Ende kurz halten) <input type="checkbox" id="def-shapes" class="switch"></label>
+
+
+    <h3 class="sec">Handschrift-Erkennung (Formel / Text)</h3>
+    <p class="muted small">„In Formel“ und „In Text“ im Lasso-Menü lesen deine Handschrift mit der KI Claude. Dafür brauchst du einen eigenen API-Schlüssel von <strong>console.anthropic.com</strong> (Konto anlegen → Guthaben aufladen → „API Keys“ → Schlüssel erstellen). Eine Umwandlung kostet etwa 1 Cent. Der Schlüssel bleibt nur auf diesem Gerät.</p>
+    <label class="set-row">API-Schlüssel <input type="password" id="set-apikey" placeholder="sk-ant-…" autocomplete="off" class="key-input"></label>
+
+    <h3 class="sec">Darstellung</h3>
+    <div class="seg" id="def-theme"><button type="button" data-v="system">System</button><button type="button" data-v="light">Hell</button><button type="button" data-v="dark">Dunkel</button></div>
+
+    <details id="advanced">
+      <summary>Erweitert</summary>
+      <label>Ordner in Nextcloud<input id="set-nc-folder" placeholder="FederNotes" autocapitalize="off" spellcheck="false"></label>
+      <p class="muted small">Manuell mit App-Passwort (Nextcloud → Einstellungen → Sicherheit):</p>
+      <label>Benutzername<input id="set-nc-user" autocomplete="username" autocapitalize="off" spellcheck="false"></label>
+      <label>App-Passwort<input id="set-nc-pass" type="password" autocomplete="off"></label>
+      <div class="row">
+        <button type="button" class="btn" id="btn-test">Verbindung testen</button>
+        <button type="button" class="btn" id="btn-save-manual">Manuell speichern</button>
+      </div>
+      <p id="set-result" class="muted"></p>
+      <hr>
+      <p class="muted small">Statt Nextcloud: eigener Sync-Server (<code>node server/server.js</code>)</p>
+      <label>Server-Adresse<input id="set-url" type="url" placeholder="http://192.168.0.10:8787"></label>
+      <label>Token<input id="set-token" type="password" autocomplete="off"></label>
+      <div class="row"><button type="button" class="btn" id="btn-save-server">Eigenen Server verwenden</button></div>
+      <hr>
+      <button type="button" class="btn" id="btn-backup">Backup-Datei exportieren</button>
+    </details>
+  </form>
+</dialog>
+
+<dialog id="dlg-note">
+  <form method="dialog">
+    <div class="dlg-head"><h2>Notiz-Einstellungen</h2><button class="icon-btn" value="cancel" title="Schließen"><svg><use href="#i-close"/></svg></button></div>
+    <h3 class="sec">Papier</h3>
+    <div class="paper-pick" id="note-paper"></div>
+    <h3 class="sec">Papierfarbe</h3>
+    <div class="paper-colors" id="note-papercolor"></div>
+    <h3 class="sec">Text in dieser Notiz</h3>
+    <div class="set-row">Schriftart <select id="note-font"></select></div>
+    <div class="set-row">Schriftgröße <select id="note-size"></select></div>
+    <div class="set-row">Zeilenabstand <select id="note-spacing"><option value="1">1 Zeile</option><option value="2">2 Zeilen</option><option value="3">3 Zeilen</option></select></div>
+    <div class="set-row">Abstand nach Absatz <select id="note-para"><option value="0">Keiner</option><option value="1">1 Zeile</option></select></div>
+    <div class="set-row">Einzug bei Aufzählungen <select id="note-indent"><option value="24">Klein</option><option value="40">Mittel</option><option value="64">Groß</option><option value="96">Sehr groß</option></select></div>
+    <div class="set-row">Textfarbe <div class="mini-palette" id="note-color"></div></div>
+    <div class="sample paper-lined" id="note-sample"><span>Beispieltext – sitzt auf der Linie</span></div>
+    <div class="row">
+      <button type="button" class="btn" id="note-reset-boxes">Einzelformatierung der Textfelder zurücksetzen</button>
+      <button type="button" class="btn" id="note-as-default">Als Standard für neue Notizen</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlg-import">
+  <form method="dialog">
+    <div class="dlg-head"><h2>Importieren</h2><button class="icon-btn" value="cancel" title="Abbrechen"><svg><use href="#i-close"/></svg></button></div>
+    <p id="imp-files" class="muted"></p>
+    <label>In Ordner<input id="imp-folder" list="folder-datalist" placeholder="z. B. Bio"></label>
+    <datalist id="folder-datalist"></datalist>
+    <div class="hint">
+      <strong>Tipp für Samsung Notes:</strong> Exportiere die Notiz als <strong>PDF</strong>
+      (Notiz öffnen → ⋮ → <em>Als Datei speichern</em> → <em>PDF</em>). Dann bleibt deine Handschrift
+      exakt erhalten und du kannst darauf weiterschreiben. Bei <code>.sdocx</code> werden nur getippter Text und Bilder übernommen.
+    </div>
+    <div class="row end">
+      <button class="btn primary" value="ok" id="imp-ok">Importieren</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlg-folder">
+  <form method="dialog">
+    <div class="dlg-head"><h2 id="folder-dlg-title">Neuer Ordner</h2><button class="icon-btn" value="cancel"><svg><use href="#i-close"/></svg></button></div>
+    <label>Name<input id="folder-name" placeholder="z. B. Mathe" autocomplete="off" list="folder-datalist"></label>
+    <div class="row end"><button class="btn primary" value="ok" id="folder-ok">Anlegen</button></div>
+  </form>
+</dialog>
+
+<dialog id="dlg-recognize">
+  <form method="dialog">
+    <div class="dlg-head"><h2 id="rec-title">In Formel umwandeln</h2><button class="icon-btn" value="cancel" title="Abbrechen"><svg><use href="#i-close"/></svg></button></div>
+    <div id="rec-preview" class="rec-preview"></div>
+    <p id="rec-status" class="muted"></p>
+    <label id="rec-label">LaTeX (zum Korrigieren)<textarea id="rec-input" rows="3" spellcheck="false" autocapitalize="off"></textarea></label>
+    <div class="row end">
+      <button type="button" class="btn danger" id="rec-delete" hidden>Formel löschen</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn" id="rec-add">Zusätzlich einfügen</button>
+      <button type="button" class="btn primary" id="rec-replace">Handschrift ersetzen</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlg-confirm">
+  <form method="dialog">
+    <h2 id="confirm-title">Sicher?</h2>
+    <p id="confirm-text" class="muted"></p>
+    <div class="row end">
+      <button class="btn" value="cancel">Abbrechen</button>
+      <button class="btn primary" value="ok" id="confirm-ok">OK</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlg-shortcuts">
+  <form method="dialog">
+    <div class="dlg-head"><h2>Tastenkürzel</h2><button class="icon-btn" value="cancel"><svg><use href="#i-close"/></svg></button></div>
+    <table class="keys">
+      <tr><td><em>einfach lostippen</em></td><td>Textfeld an der zuletzt angetippten Stelle</td></tr>
+      <tr><td><kbd>Alt</kbd>+<kbd>N</kbd></td><td>Neue Notiz</td></tr>
+      <tr><td><kbd>Strg</kbd>+<kbd>F</kbd></td><td>Suchen</td></tr>
+      <tr><td><kbd>Strg</kbd>+<kbd>S</kbd></td><td>Synchronisieren</td></tr>
+      <tr><td><kbd>Strg</kbd>+<kbd>Z</kbd> / <kbd>Y</kbd></td><td>Rückgängig / Wiederholen</td></tr>
+      <tr><td><kbd>Alt</kbd>+<kbd>1</kbd>…<kbd>6</kbd></td><td>Stift, Marker, Radierer, Auswahl, Tastatur, Textfeld</td></tr>
+      <tr><td><kbd>Tab</kbd> / <kbd>Umschalt</kbd>+<kbd>Tab</kbd></td><td>Tabstopp bzw. Aufzählung eine Ebene tiefer / höher</td></tr>
+      <tr><td><kbd>Strg</kbd>+<kbd>L</kbd>/<kbd>E</kbd>/<kbd>R</kbd></td><td>Links / zentriert / rechts</td></tr>
+      <tr><td><kbd>Strg</kbd>+<kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd></td><td>Zeilenabstand 1, 2 oder 3 Zeilen</td></tr>
+      <tr><td><kbd>Strg</kbd>+<kbd>Alt</kbd>+<kbd>1</kbd>/<kbd>2</kbd></td><td>Überschrift 1 / 2 (<kbd>Strg</kbd>+<kbd>Umschalt</kbd>+<kbd>N</kbd> = Standard)</td></tr>
+      <tr><td><kbd>Strg</kbd>+<kbd>Umschalt</kbd>+<kbd>L</kbd></td><td>Aufzählung</td></tr>
+      <tr><td><kbd>Strg</kbd>+<kbd>Umschalt</kbd>+<kbd>&lt;</kbd>/<kbd>&gt;</kbd></td><td>Schrift kleiner / größer</td></tr>
+      <tr><td><kbd>Alt</kbd>+<kbd>Q</kbd>/<kbd>W</kbd></td><td>Vorherige / nächste Farbe</td></tr>
+      <tr><td><kbd>Strg</kbd>+<kbd>Umschalt</kbd>+<kbd>Enter</kbd></td><td>Neue Seite</td></tr>
+      <tr><td><kbd>Strg</kbd>+<kbd>B</kbd>/<kbd>I</kbd>/<kbd>U</kbd></td><td>Fett / Kursiv / Unterstrichen</td></tr>
+      <tr><td><kbd>Strg</kbd>+<kbd>Umschalt</kbd>+<kbd>H</kbd></td><td>Text markieren</td></tr>
+      <tr><td><code>- </code> <code>1. </code> <code># </code> <code>[] </code></td><td>Liste, Nummerierung, Überschrift, Checkbox</td></tr>
+      <tr><td><kbd>Entf</kbd></td><td>Auswahl löschen</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>Zurück / Auswahl aufheben</td></tr>
+    </table>
+    <p class="muted">S Pen: Seitentaste gedrückt = Radierer. Hand auf dem Display wird ignoriert. Finger: wischen = scrollen, zwei Finger = zoomen.</p>
+  </form>
+</dialog>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

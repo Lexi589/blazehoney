@@ -1,0 +1,78 @@
+name: Feder Notes – Android-App bauen
+
+on:
+  push:
+    branches: [main, master, claude/samsung-notes-improvement-w7oauf]
+    paths: ['feder-notes/**', '.github/workflows/feder-apps.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  android:
+    name: Android (Samsung) APK
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: feder-notes
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: feder-notes/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - run: npm run android:prepare
+        env:
+          VERSION_CODE: ${{ github.run_number }}
+      - name: Fester Signaturschlüssel (damit Updates installierbar sind)
+        run: mkdir -p ~/.android && cp android-debug.keystore ~/.android/debug.keystore
+      - name: Gradle-Cache (weniger Downloads von Maven Central)
+        uses: gradle/actions/setup-gradle@v4
+      - name: APK bauen
+        # Maven Central drosselt gelegentlich (HTTP 429) – dann kurz warten und erneut versuchen
+        run: |
+          cd android && chmod +x gradlew
+          for i in 1 2 3; do
+            ./gradlew assembleDebug && exit 0
+            echo "Build fehlgeschlagen (Versuch $i), warte und versuche erneut …"
+            sleep $((i * 45))
+          done
+          exit 1
+      - run: cp android/app/build/outputs/apk/debug/app-debug.apk FederNotes.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FederNotes-Android
+          path: feder-notes/FederNotes.apk
+
+  release:
+    name: Download-Seite aktualisieren
+    needs: [android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: feder-notes-latest
+          name: Feder Notes (aktuelle Version)
+          prerelease: true
+          make_latest: false
+          files: |
+            out/FederNotes.apk
+          body: |
+            Automatisch gebaut aus Commit ${{ github.sha }} (Build ${{ github.run_number }}).
+
+            **Samsung / Android:** `FederNotes.apk` auf dem Tablet herunterladen und öffnen.
+            Beim ersten Mal „Installation aus unbekannten Quellen“ für den Browser erlauben.
+
