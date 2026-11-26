@@ -274,6 +274,10 @@
     <label class="set-row">Formen erkennen (Stift am Ende kurz halten) <input type="checkbox" id="def-shapes" class="switch"></label>
 
 
+    <h3 class="sec">Handschrift-Erkennung (Formel / Text)</h3>
+    <p class="muted small">„In Formel“ und „In Text“ im Lasso-Menü lesen deine Handschrift mit der KI Claude. Dafür brauchst du einen eigenen API-Schlüssel von <strong>console.anthropic.com</strong> (Konto anlegen → Guthaben aufladen → „API Keys“ → Schlüssel erstellen). Eine Umwandlung kostet etwa 1 Cent. Der Schlüssel bleibt nur auf diesem Gerät.</p>
+    <label class="set-row">API-Schlüssel <input type="password" id="set-apikey" placeholder="sk-ant-…" autocomplete="off" class="key-input"></label>
+
     <h3 class="sec">Darstellung</h3>
     <div class="seg" id="def-theme"><button type="button" data-v="system">System</button><button type="button" data-v="light">Hell</button><button type="button" data-v="dark">Dunkel</button></div>
 
@@ -343,6 +347,21 @@
     <div class="dlg-head"><h2 id="folder-dlg-title">Neuer Ordner</h2><button class="icon-btn" value="cancel"><svg><use href="#i-close"/></svg></button></div>
     <label>Name<input id="folder-name" placeholder="z. B. Mathe" autocomplete="off" list="folder-datalist"></label>
     <div class="row end"><button class="btn primary" value="ok" id="folder-ok">Anlegen</button></div>
+  </form>
+</dialog>
+
+<dialog id="dlg-recognize">
+  <form method="dialog">
+    <div class="dlg-head"><h2 id="rec-title">In Formel umwandeln</h2><button class="icon-btn" value="cancel" title="Abbrechen"><svg><use href="#i-close"/></svg></button></div>
+    <div id="rec-preview" class="rec-preview"></div>
+    <p id="rec-status" class="muted"></p>
+    <label id="rec-label">LaTeX (zum Korrigieren)<textarea id="rec-input" rows="3" spellcheck="false" autocapitalize="off"></textarea></label>
+    <div class="row end">
+      <button type="button" class="btn danger" id="rec-delete" hidden>Formel löschen</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn" id="rec-add">Zusätzlich einfügen</button>
+      <button type="button" class="btn primary" id="rec-replace">Handschrift ersetzen</button>
+    </div>
   </form>
 </dialog>
 

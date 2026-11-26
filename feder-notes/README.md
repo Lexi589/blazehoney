@@ -129,8 +129,19 @@ Die Leiste darüber bietet:
 
 **Favoriten:** Über ⋯ → „Zu Favoriten“ markierst du eine Notiz. Alle Favoriten findest du in der Ordnerleiste.
 
+**In Formel / In Text umwandeln:** Umkreise deine Handschrift mit dem Lasso und tippe auf „In Formel“ oder „In Text“. Danach siehst du eine Vorschau. Formeln erscheinen als sauber gesetzte Formel und lassen sich als LaTeX korrigieren. Mit „Handschrift ersetzen“ oder „Zusätzlich einfügen“ übernimmst du das Ergebnis. Eine eingefügte Formel tippst du an, um sie zu bearbeiten.
+
+So richtest du die Erkennung ein:
+1. Die Erkennung nutzt die KI Claude (Modell Claude Opus 5.5) über die Anthropic-API. Dafür brauchst du einen eigenen API-Schlüssel: auf console.anthropic.com ein Konto anlegen, Guthaben aufladen und unter „API Keys“ einen Schlüssel erstellen.
+2. Trage den Schlüssel unter ⚙ → „Handschrift-Erkennung“ ein.
+
+Eine Umwandlung kostet etwa 1 Cent. Der Schlüssel bleibt nur auf diesem Gerät und wird nicht synchronisiert. Ohne Internet ist die Erkennung nicht möglich.
+
+**Linienart:** Tippe auf den aktiven Stift und wähle durchgezogen, gestrichelt oder gepunktet. Die Linienart gilt pro Stiftart.
+
+**S-Pen-Taste:** Halte die Seitentaste gedrückt, während du schreibst, dann radierst du. Falls stattdessen das Samsung-Menü „Air Command“ aufgeht: Dieses Menü öffnet sich, wenn du die Taste drückst, während der Stift über dem Display schwebt. Deshalb die Taste erst drücken, wenn der Stift das Display berührt.
+
 Noch nicht enthalten sind:
-- Handschrift → Text bzw. Formel umwandeln (braucht eine Schrifterkennung)
 - Handschrift ausrichten
 - Zusammenarbeiten, Tags, Sperren
 - Dokumentenscan, Doppelseiten-Ansicht

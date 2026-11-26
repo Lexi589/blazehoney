@@ -1,10 +1,11 @@
 import { db, uid } from './db.js';
-import { Editor, newPage, drawStroke, PAGE_W, FONTS, DEFAULT_TEXT, PAPER_COLORS, inkColor, tableRow, tableCol } from './editor.js';
+import { Editor, newPage, drawStroke, PAGE_W, FONTS, DEFAULT_TEXT, PAPER_COLORS, inkColor, tableRow, tableCol, renderLatex } from './editor.js';
 import { importFileAsNote, fileToPages, exportBackup, readBackup, storeAsset } from './import.js';
 import { Sync } from './sync.js';
 import { escapeHTML } from './sanitize.js';
 import { platform } from './transport.js';
 import { normalizeNcUrl, ncLogin } from './nextcloud.js';
+import { recognize, getApiKey, setApiKey } from './convert.js';
 
 const $ = sel => document.querySelector(sel);
 const TRASH = '__trash', ALL = '__all';
@@ -62,6 +63,8 @@ const editor = window.__federEditor = new Editor($('#pages'), {
   onWantLasso: () => { if (editor.tool !== 'lasso') { editor.tool = 'lasso'; $('#pages').dataset.tool = 'lasso'; renderToolbar(); } },
   onSelectionStyle: anchor => openSelectionStyle(anchor),
   onPlayAudio: (au, el) => playAudio(au, el),
+  onRecognize: kind => startRecognize(kind),
+  onEditFormula: (f, pv) => openFormulaEdit(f, pv),
   onKeyboardMode: () => { if (editor.tool !== 'keyboard') { editor.tool = 'keyboard'; $('#pages').dataset.tool = 'keyboard'; renderToolbar(); savePrefs(); } },
   onFormatChange: () => { const w = editor.focusedBox; if (w) showFormatBar(w); },
   onTextBlur: () => setTimeout(() => { if (!editor.focusedBox && !formatBarBusy) $('#formatbar').hidden = true; }, 150),
@@ -171,6 +174,7 @@ async function makeThumb(n) {
       if (y > page.h) break;
     }
   }
+  for (const f of page.formulas || []) { ctx.font = `${f.size}px serif`; ctx.fillText(f.text || f.latex, f.x, f.y + f.size); }
   ctx.restore();
   return c.toDataURL('image/jpeg', 0.72);
 }
@@ -195,6 +199,7 @@ function noteBodyText(n) {
   for (const p of n.pages) {
     for (const t of [p.main, ...p.texts].filter(Boolean)) { div.innerHTML = (t.html || '').replace(/<(\/?(?:div|p|li|h[1-3]|br)\b[^>]*)>/gi, ' <$1>'); parts.push(div.textContent); }
     if (p.searchText) parts.push(p.searchText);
+    for (const f of p.formulas || []) parts.push(f.text || f.latex);
   }
   const text = parts.join(' ').replace(/\s+/g, ' ').trim();
   textCache.set(n, { at: n.updatedAt, text });
@@ -555,6 +560,7 @@ function openToolPopover(tool) {
   pop.innerHTML = `
     <div class="pop-title">${isPen ? 'Stift' : 'Textmarker'}</div>
     ${isPen ? `<div class="kinds">${KINDS.map(([k, label]) => `<button class="kind" data-k="${k}"><svg><use href="#i-${k}"/></svg>${label}</button>`).join('')}</div>` : ''}
+    ${isPen ? '<div class="seg dash-seg"><button data-d="solid">Durchgezogen</button><button data-d="dash">Gestrichelt</button><button data-d="dot">Gepunktet</button></div>' : ''}
     <canvas class="preview"></canvas>
     <div class="size-row"><span>Stärke</span><input type="range"><span class="val"></span></div>
     <div class="palette"></div>`;
@@ -567,11 +573,13 @@ function openToolPopover(tool) {
     pop.querySelectorAll('.kind').forEach(b => b.classList.toggle('active', b.dataset.k === editor.penKind));
     range.min = isPen ? 0.5 : 6; range.max = isPen ? 14 : 50; range.step = isPen ? 0.25 : 1;
     range.value = st.width; val.textContent = (+st.width).toFixed(isPen ? 1 : 0);
-    drawPreview(canvas, { tool, kind: isPen ? editor.penKind : undefined, color: st.color, width: st.width });
+    pop.querySelectorAll('.dash-seg button').forEach(b => b.classList.toggle('active', (st.dash || 'solid') === b.dataset.d));
+    drawPreview(canvas, { tool, kind: isPen ? editor.penKind : undefined, color: st.color, width: st.width, dash: isPen && st.dash !== 'solid' ? st.dash : undefined });
     pop.querySelectorAll('.palette .swatch').forEach(s => s.classList.toggle('active', s.dataset.c && s.dataset.c.toLowerCase() === st.color.toLowerCase()));
     renderToolbar();
   };
   pop.querySelectorAll('.kind').forEach(b => { b.onclick = () => { editor.penKind = b.dataset.k; refresh(); savePrefs(); }; });
+  pop.querySelectorAll('.dash-seg button').forEach(b => { b.onclick = () => { editor.styles[editor.penKind].dash = b.dataset.d; refresh(); savePrefs(); }; });
   range.oninput = () => { editor.styles[tool === 'highlighter' ? 'highlighter' : editor.penKind].width = +range.value; refresh(); savePrefs(); };
   buildPalette(pop.querySelector('.palette'), c => {
     editor.styles[tool === 'highlighter' ? 'highlighter' : editor.penKind].color = c;
@@ -1358,6 +1366,75 @@ function openTextColorPicker(anchor) {
   placePopover(anchor);
 }
 
+/* ---------------- Handschrift → Formel / Text ---------------- */
+let recRun = 0;
+function recDialog(kind, { edit = false } = {}) {
+  $('#rec-title').textContent = edit ? 'Formel bearbeiten' : kind === 'formula' ? 'In Formel umwandeln' : 'In Text umwandeln';
+  $('#rec-label').firstChild.textContent = kind === 'formula' ? 'LaTeX (zum Korrigieren)' : 'Text (zum Korrigieren)';
+  $('#rec-preview').className = 'rec-preview' + (kind === 'text' ? ' text' : '');
+  $('#rec-delete').hidden = !edit;
+  $('#rec-add').hidden = edit;
+  $('#rec-replace').textContent = edit ? 'Übernehmen' : 'Handschrift ersetzen';
+  const input = $('#rec-input');
+  input.oninput = () => {
+    if (kind === 'formula') { const el = $('#rec-preview'); el._latex = input.value; renderLatex(el, input.value); }
+    else $('#rec-preview').textContent = input.value;
+  };
+  return input;
+}
+
+async function startRecognize(kind) {
+  const img = editor.selectionImage();
+  if (!img) return;
+  if (!await getApiKey()) {
+    if (await askConfirm('Erkennung einrichten', 'Für „In Formel“ und „In Text“ brauchst du einen eigenen API-Schlüssel von Anthropic (console.anthropic.com). Eine Umwandlung kostet etwa 1 Cent. Jetzt in den Einstellungen eintragen?', 'Einstellungen öffnen')) {
+      await openSettings();
+      setTimeout(() => $('#set-apikey').scrollIntoView({ block: 'center' }), 100);
+      $('#set-apikey').focus();
+    }
+    return;
+  }
+  const run = ++recRun;
+  const input = recDialog(kind);
+  input.value = '';
+  $('#rec-preview').innerHTML = `<img alt="" src="${img.dataURL}">`;
+  $('#rec-status').textContent = kind === 'formula' ? 'Erkenne Formel …' : 'Erkenne Handschrift …';
+  $('#rec-replace').disabled = $('#rec-add').disabled = true;
+  $('#dlg-recognize').showModal();
+  let result;
+  try {
+    result = await recognize(kind, img.dataURL);
+  } catch (err) {
+    if (run === recRun) $('#rec-status').textContent = '✗ ' + err.message;
+    return;
+  }
+  if (run !== recRun || !$('#dlg-recognize').open) return;
+  $('#rec-status').textContent = kind === 'formula' ? (result.text ? 'Erkannt: ' + result.text : '') : '';
+  input.value = kind === 'formula' ? result.latex : result.text;
+  input.oninput();
+  $('#rec-replace').disabled = $('#rec-add').disabled = false;
+  const apply = replace => {
+    const value = kind === 'formula' ? { latex: input.value.trim(), text: result.text } : { text: input.value };
+    editor.insertRecognized(kind, value, replace);
+    $('#dlg-recognize').close();
+    toast(kind === 'formula' ? 'Formel eingefügt – antippen zum Bearbeiten' : 'Text eingefügt');
+  };
+  $('#rec-replace').onclick = () => apply(true);
+  $('#rec-add').onclick = () => apply(false);
+}
+
+function openFormulaEdit(f, pv) {
+  ++recRun;
+  const input = recDialog('formula', { edit: true });
+  input.value = f.latex;
+  input.oninput();
+  $('#rec-status').textContent = f.text ? 'Klartext: ' + f.text : '';
+  $('#rec-replace').disabled = false;
+  $('#rec-replace').onclick = () => { editor.updateFormula(f, pv, input.value.trim()); $('#dlg-recognize').close(); };
+  $('#rec-delete').onclick = () => { editor.select(pv, [], [], [], [], [f]); editor.deleteSelection(); $('#dlg-recognize').close(); };
+  $('#dlg-recognize').showModal();
+}
+
 /* ---------------- Lasso: Stil ändern ---------------- */
 function openSelectionStyle(anchor) {
   const pop = $('#popover');
@@ -1575,6 +1652,7 @@ function fillGeneralSettings() {
   $('#def-finger').checked = editor.fingerDraws;
   $('#def-typing').checked = state.typing;
   $('#def-shapes').checked = !editor.shapesOff;
+  getApiKey().then(k => { $('#set-apikey').value = k; });
   $('#def-theme').querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.v === state.theme));
 }
 
@@ -1588,6 +1666,7 @@ function wireSettings() {
   $('#def-finger').onchange = e => setFingerDraws(e.target.checked);
   $('#def-typing').onchange = e => { state.typing = e.target.checked; saveGeneral(); };
   $('#def-shapes').onchange = e => { editor.shapesOff = !e.target.checked; saveGeneral(); };
+  $('#set-apikey').onchange = async e => { await setApiKey(e.target.value); toast(e.target.value.trim() ? 'API-Schlüssel gespeichert' : 'API-Schlüssel entfernt'); };
   $('#def-theme').querySelectorAll('button').forEach(b => {
     b.onclick = () => { applyTheme(b.dataset.v); saveGeneral(); fillGeneralSettings(); };
   });

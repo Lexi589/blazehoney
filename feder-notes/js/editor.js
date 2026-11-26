@@ -130,12 +130,12 @@ export class Editor {
     const pv = { data, el, bgSheet, imgSheet, ink, live, textSheet, num, k: 1, s: 1, visible: false, drawnK: 0, liveOn: false };
     data.images = data.images || [];
     data.audios = data.audios || [];
+    data.formulas = data.formulas || [];
     el._pv = pv;
     this.applyBackground(pv);
     this.buildMain(pv);
     data.texts.forEach(t => this.buildTextBox(pv, t));
-    this.renderImages(pv);
-    this.renderAudios(pv);
+    this.renderObjects(pv);
 
     const before = this.pages[index] ? this.pages[index].el : this.addBtn || null;
     this.inner.insertBefore(el, before);
@@ -285,8 +285,8 @@ export class Editor {
 
   onTouchStart(e) {
     const penBusy = Date.now() < this.penActiveUntil || (this.active && this.active.type === 'pen');
-    const inText = e.target.closest && e.target.closest('.tb-body');
-    if (penBusy || (this.fingerDraws && !inText)) { if (e.cancelable) e.preventDefault(); return; }
+    const inText = e.target.closest && e.target.closest('.tb-body, .selbar, .formula, .audio-chip');
+    if ((penBusy && !inText) || (this.fingerDraws && !inText)) { if (e.cancelable) e.preventDefault(); return; }
     if (this.fingerDraws) return;
     if (e.touches.length >= 2) {
       if (e.cancelable) e.preventDefault();
@@ -432,6 +432,16 @@ export class Editor {
       this.placeKeyboardCaret(pv, y, e);
       return;
     }
+    // Formeln & Sprachaufnahmen antippen (Finger/Maus, oder Stift im Text-/Tastatur-Modus): nicht zeichnen
+    if (e.target.closest('.formula, .audio-chip') && this.tool !== 'lasso' && (e.pointerType !== 'pen' || this.tool === 'text' || this.tool === 'keyboard')) return;
+    // Stift im Text-/Tastatur-Modus auf einem Textfeld: Cursor setzen statt zeichnen
+    if (inText && e.pointerType === 'pen' && (this.tool === 'text' || this.tool === 'keyboard') && !e.target.closest('.tb-grip') && !this.readOnly) {
+      e.preventDefault();
+      const body = inText.querySelector('.tb-body');
+      body.focus({ preventScroll: true });
+      placeCaretAtPoint(e.clientX, e.clientY);
+      return;
+    }
     // Maus/Finger in einem Textfeld → normales Textverhalten
     if (inText && e.pointerType !== 'pen' && !e.target.closest('.tb-grip')) return;
     if (e.target.closest('.tb-grip')) { this.startTextDrag(e, inText); return; }
@@ -482,8 +492,10 @@ export class Editor {
       const stl = this.styles[sk];
       const st = { tool, color: stl.color, width: stl.width, points: [this.pointFromEvent(pv, e)] };
       if (tool === 'pen') st.kind = this.penKind;
+      if (tool === 'pen' && stl.dash && stl.dash !== 'solid') st.dash = stl.dash;
       this.active = { kind: 'draw', pv, id: e.pointerId, stroke: st, ...meta };
-      if (tool === 'pen') this.drawLiveSegment(pv, st);
+      if (st.dash) this.drawOverlay(pv, ctx => drawStroke(ctx, st, this.dark));
+      else if (tool === 'pen') this.drawLiveSegment(pv, st);
       else this.drawOverlay(pv, ctx => drawStroke(ctx, st, this.dark));
     } else if (tool === 'eraser') {
       this.active = { kind: 'erase', pv, id: e.pointerId, removed: [], added: [], last: [x, y], ...meta };
@@ -518,9 +530,9 @@ export class Editor {
         const pt = this.pointFromEvent(a.pv, ev, prev[2]);
         if (Math.hypot(pt[0] - prev[0], pt[1] - prev[1]) < 0.6) continue;
         pts.push(pt);
-        if (a.stroke.tool === 'pen') this.drawLiveSegment(a.pv, a.stroke);
+        if (a.stroke.tool === 'pen' && !a.stroke.dash) this.drawLiveSegment(a.pv, a.stroke);
       }
-      if (a.stroke.tool === 'highlighter') this.drawOverlay(a.pv, ctx => drawStroke(ctx, a.stroke, this.dark));
+      if (a.stroke.tool === 'highlighter' || a.stroke.dash) this.drawOverlay(a.pv, ctx => drawStroke(ctx, a.stroke, this.dark));
       this.armHold(a);
     } else if (a.kind === 'erase') {
       for (const ev of list) { const [x, y] = this.pos(a.pv, ev); this.eraseTo(a.pv, x, y); }
@@ -559,8 +571,7 @@ export class Editor {
 
   afterTransform(pv) {
     this.selection.box = selBox(this.selection);
-    this.renderImages(pv);
-    this.renderAudios(pv);
+    this.renderObjects(pv);
     this.scheduleRedraw(pv);
   }
 
@@ -687,13 +698,22 @@ export class Editor {
     });
     const images = pv.data.images.filter(im => pointInPoly([im.x + im.w / 2, im.y + im.h / 2], poly));
     const audios = pv.data.audios.filter(au => pointInPoly([au.x + 60, au.y + 20], poly));
-    if (!strokes.length && !images.length && !audios.length) { this.drawOverlay(pv); return; }
-    this.select(pv, strokes, images, audios);
+    const texts = [], formulas = [];
+    for (const w of pv.textSheet.querySelectorAll('.tb:not(.main)')) {
+      const t = w._t;
+      if (pointInPoly([t.x + w.offsetWidth / 2, t.y + w.offsetHeight / 2], poly)) { t._w = w.offsetWidth; t._h = w.offsetHeight; texts.push(t); }
+    }
+    for (const el of pv.textSheet.querySelectorAll('.formula')) {
+      const f = el._f;
+      if (pointInPoly([f.x + el.offsetWidth / 2, f.y + el.offsetHeight / 2], poly)) { f._w = el.offsetWidth; f._h = el.offsetHeight; formulas.push(f); }
+    }
+    if (!strokes.length && !images.length && !audios.length && !texts.length && !formulas.length) { this.drawOverlay(pv); return; }
+    this.select(pv, strokes, images, audios, texts, formulas);
   }
 
-  select(pv, strokes = [], images = [], audios = []) {
+  select(pv, strokes = [], images = [], audios = [], texts = [], formulas = []) {
     this.clearSelection();
-    this.selection = { pv, strokes: new Set(strokes), images: new Set(images), audios: new Set(audios) };
+    this.selection = { pv, strokes: new Set(strokes), images: new Set(images), audios: new Set(audios), texts: new Set(texts), formulas: new Set(formulas) };
     this.selection.box = selBox(this.selection);
     if (!pv.visible) { pv.visible = true; this.redraw(pv); } else this.drawOverlay(pv);
     this.showSelBar();
@@ -716,24 +736,39 @@ export class Editor {
     if (!this.selBar) {
       const bar = document.createElement('div');
       bar.className = 'selbar';
-      const items = [['style', 'Stil'], ['copy', 'Kopieren'], ['cut', 'Ausschneiden'], ['dup', 'Duplizieren'], ['front', 'Nach vorne'], ['back', 'Nach hinten'], ['del', 'Löschen']];
+      const items = [['formula', 'In Formel'], ['text', 'In Text'], ['style', 'Stil'], ['copy', 'Kopieren'], ['cut', 'Ausschneiden'], ['dup', 'Duplizieren'], ['front', 'Vorne'], ['back', 'Hinten'], ['del', 'Löschen']];
       bar.innerHTML = items.map(([k, l]) => `<button data-sel="${k}"${k === 'del' ? ' class="danger"' : ''}>${l}</button>`).join('');
-      bar.addEventListener('pointerdown', e => e.stopPropagation());
-      bar.addEventListener('click', e => {
-        const k = e.target.dataset && e.target.dataset.sel;
+      // Leiste darf weder Zeichnen noch das Scroll-Blockieren (Stift in der Nähe) auslösen
+      bar.addEventListener('pointerdown', e => { e.stopPropagation(); bar._down = e.target.closest('button'); });
+      bar.addEventListener('touchstart', e => e.stopPropagation(), { passive: true });
+      bar.addEventListener('contextmenu', e => e.preventDefault());
+      const run = btn => {
+        const k = btn && btn.dataset.sel;
         if (!k) return;
+        const e = { target: btn };
+        if (k === 'formula' || k === 'text') { this.opts.onRecognize && this.opts.onRecognize(k); return; }
         if (k === 'style') this.opts.onSelectionStyle && this.opts.onSelectionStyle(e.target);
         if (k === 'copy') { this.copySelection(); this.opts.onInfo && this.opts.onInfo('Kopiert'); }
         if (k === 'cut') { this.copySelection(); this.deleteSelection(); }
         if (k === 'dup') { this.copySelection(); this.paste(20); }
         if (k === 'front' || k === 'back') this.reorderSelection(k === 'front');
         if (k === 'del') this.deleteSelection();
+      };
+      // Auslösen beim Loslassen (funktioniert mit Stift, Finger und Maus – auch wenn kein click kommt)
+      bar.addEventListener('pointerup', e => {
+        e.stopPropagation();
+        const btn = e.target.closest('button');
+        if (btn && btn === bar._down) { bar._fired = Date.now(); run(btn); }
+        bar._down = null;
       });
+      bar.addEventListener('click', e => { if (Date.now() - (bar._fired || 0) > 600) run(e.target.closest('button')); });
       this.selBar = bar;
     }
     const pv = sel.pv, b = sel.box, s = pv.s;
     pv.el.appendChild(this.selBar);
     this.selBar.hidden = false;
+    const onlyStrokes = sel.strokes.size > 0;
+    this.selBar.querySelectorAll('[data-sel=formula], [data-sel=text], [data-sel=style]').forEach(x => { x.hidden = !onlyStrokes; });
     const top = (b.y - 8) * s - 104;
     this.selBar.style.left = Math.max(4, Math.min(pv.el.clientWidth - this.selBar.offsetWidth - 4, (b.x + b.w / 2) * s - this.selBar.offsetWidth / 2)) + 'px';
     this.selBar.style.top = (top > 4 ? top : (b.y + b.h + 16) * s) + 'px';
@@ -743,15 +778,17 @@ export class Editor {
 
   deleteSelection() {
     if (!this.selection) return false;
-    const { pv, strokes, images, audios } = this.selection;
+    const { pv, strokes, images, audios, texts, formulas } = this.selection;
     const before = snapObjs(pv);
     pv.data.strokes = pv.data.strokes.filter(s => !strokes.has(s));
     pv.data.images = pv.data.images.filter(i => !images.has(i));
     pv.data.audios = pv.data.audios.filter(a => !audios.has(a));
+    pv.data.texts = pv.data.texts.filter(t => !texts.has(t));
+    pv.data.formulas = pv.data.formulas.filter(f => !formulas.has(f));
     this.pushHistory({ t: 'objs', pv, before, after: snapObjs(pv) });
     this.selection = null;
     this.hideSelBar();
-    this.renderImages(pv); this.renderAudios(pv);
+    this.renderObjects(pv);
     this.redraw(pv);
     return true;
   }
@@ -785,8 +822,8 @@ export class Editor {
 
   copySelection() {
     if (!this.selection) return;
-    const { strokes, images, audios } = this.selection;
-    Editor.clipboard = JSON.parse(JSON.stringify({ strokes: [...strokes], images: [...images], audios: [...audios] }));
+    const { strokes, images, audios, texts, formulas } = this.selection;
+    Editor.clipboard = JSON.parse(JSON.stringify({ strokes: [...strokes], images: [...images], audios: [...audios], texts: [...texts], formulas: [...formulas] }));
   }
 
   /** Aus der Zwischenablage einfügen (auch in andere Notizen); offset verschiebt leicht. */
@@ -798,15 +835,19 @@ export class Editor {
     data.strokes.forEach(st => st.points.forEach(p => { p[0] += offset; p[1] += offset; }));
     data.images.forEach(im => { im.id = uid(); im.x += offset; im.y += offset; });
     data.audios.forEach(au => { au.id = uid(); au.x += offset; au.y += offset; });
+    data.texts = (data.texts || []).map(t => ({ ...t, id: uid(), x: t.x + offset, y: Math.round((t.y + offset) / LINE) * LINE }));
+    data.formulas = (data.formulas || []).map(f => ({ ...f, id: uid(), x: f.x + offset, y: f.y + offset }));
     const before = snapObjs(pv);
     pv.data.strokes.push(...data.strokes);
     pv.data.images.push(...data.images);
     pv.data.audios.push(...data.audios);
+    pv.data.texts.push(...data.texts);
+    pv.data.formulas.push(...data.formulas);
     this.pushHistory({ t: 'objs', pv, before, after: snapObjs(pv) });
-    this.renderImages(pv); this.renderAudios(pv);
+    this.renderObjects(pv);
     this.redraw(pv);
     this.opts.onWantLasso && this.opts.onWantLasso();
-    this.select(pv, data.strokes, data.images, data.audios);
+    this.select(pv, data.strokes, data.images, data.audios, data.texts, data.formulas);
     return true;
   }
 
@@ -827,6 +868,94 @@ export class Editor {
       sheet.appendChild(el);        // Reihenfolge = Ebenen
     }
     for (const el of have.values()) el.remove();
+  }
+
+  /** Bilder, Aufnahmen, Formeln und Textfelder mit den Seitendaten abgleichen. */
+  renderObjects(pv) {
+    this.renderImages(pv);
+    this.renderAudios(pv);
+    this.renderFormulas(pv);
+    this.syncTextBoxes(pv);
+  }
+
+  syncTextBoxes(pv) {
+    const wraps = [...pv.textSheet.querySelectorAll('.tb:not(.main)')];
+    for (const w of wraps) if (!pv.data.texts.includes(w._t)) w.remove();
+    for (const t of pv.data.texts) {
+      const w = wraps.find(x => x._t === t);
+      if (!w) this.buildTextBox(pv, t); else this.styleBox(w);
+    }
+  }
+
+  renderFormulas(pv) {
+    pv.data.formulas = pv.data.formulas || [];
+    const els = [...pv.textSheet.querySelectorAll('.formula')];
+    for (const el of els) if (!pv.data.formulas.includes(el._f)) el.remove();
+    for (const f of pv.data.formulas) {
+      let el = els.find(x => x._f === f);
+      if (!el) {
+        el = document.createElement('div');
+        el.className = 'formula';
+        el._f = f;
+        el.addEventListener('touchstart', e => e.stopPropagation(), { passive: true });
+        el.addEventListener('click', () => { if (this.tool !== 'lasso') this.opts.onEditFormula && this.opts.onEditFormula(f, pv); });
+        pv.textSheet.appendChild(el);
+      }
+      if (el._latex !== f.latex || el._size !== f.size) {
+        el._latex = f.latex; el._size = f.size;
+        el.style.fontSize = f.size + 'px';
+        renderLatex(el, f.latex);
+      }
+      el.style.left = f.x + 'px';
+      el.style.top = f.y + 'px';
+      el.style.color = inkColor(f.color || '#1d1d1f', this.dark);
+    }
+  }
+
+  /** Ausgewählte Striche als Bild (für die Erkennung), weißer Hintergrund. */
+  selectionImage(maxW = 1400) {
+    const sel = this.selection;
+    if (!sel || !sel.strokes.size) return null;
+    const strokes = [...sel.strokes];
+    const b = bbox(strokes), pad = 24;
+    const sc = Math.min(3, maxW / (b.w + pad * 2), 900 / (b.h + pad * 2));
+    const c = document.createElement('canvas');
+    c.width = Math.max(32, Math.round((b.w + pad * 2) * sc));
+    c.height = Math.max(32, Math.round((b.h + pad * 2) * sc));
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+    ctx.setTransform(sc, 0, 0, sc, (pad - b.x) * sc, (pad - b.y) * sc);
+    for (const st of strokes) drawStroke(ctx, { ...st, color: st.tool === 'highlighter' ? st.color : '#000000' });
+    return { dataURL: c.toDataURL('image/png'), box: b };
+  }
+
+  /** Erkannte Formel/Text an die Stelle der Auswahl setzen; replace = Handschrift entfernen. */
+  insertRecognized(kind, value, replace) {
+    const sel = this.selection;
+    const pv = sel ? sel.pv : this.visiblePage();
+    const b = sel ? bbox([...sel.strokes]) : { x: 96, y: 200, w: 400, h: 60 };
+    const before = snapObjs(pv);
+    if (replace && sel) pv.data.strokes = pv.data.strokes.filter(st => !sel.strokes.has(st));
+    let obj;
+    if (kind === 'formula') {
+      const size = Math.round(Math.max(22, Math.min(64, b.h * 0.55)));
+      obj = { id: uid(), x: Math.round(b.x), y: Math.round(b.y + Math.max(0, (b.h - size * 1.4) / 2)), size, latex: value.latex, text: value.text || '' };
+      pv.data.formulas.push(obj);
+    } else {
+      obj = { id: uid(), x: Math.round(b.x), y: Math.floor(b.y / LINE) * LINE, w: Math.max(240, Math.round(b.w + 40)), html: textToHTMLLocal(value.text) };
+      pv.data.texts.push(obj);
+    }
+    this.clearSelection();
+    this.pushHistory({ t: 'objs', pv, before, after: snapObjs(pv) });
+    this.renderObjects(pv);
+    this.redraw(pv);
+    return obj;
+  }
+
+  updateFormula(f, pv, latex, text) {
+    f.latex = latex; if (text != null) f.text = text;
+    this.renderFormulas(pv);
+    this.changed();
   }
 
   renderAudios(pv) {
@@ -1243,7 +1372,12 @@ export class Editor {
     });
     body.addEventListener('click', e => { if (e.target.classList.contains('cb')) this.toggleCheckbox(e.target); });
     body.addEventListener('blur', () => {
-      if (!body.textContent.trim() && !body.querySelector('.cb')) this.removeTextBox(pv, t, wrap);
+      // verzögert prüfen: Formatleiste/Menüs nehmen kurz den Fokus, das Feld soll dann nicht verschwinden
+      setTimeout(() => {
+        if (document.activeElement === body || !wrap.isConnected) return;
+        if (document.activeElement && document.activeElement.closest && document.activeElement.closest('#formatbar, #popover, dialog')) return;
+        if (!body.textContent.trim() && !body.querySelector('.cb, table')) this.removeTextBox(pv, t, wrap);
+      }, 400);
     });
     new MutationObserver(() => {
       const w = parseFloat(body.style.width) || null;
@@ -1512,10 +1646,10 @@ export class Editor {
         break;
       case 'move': translate(a.strokes, isUndo ? -a.dx : a.dx, isUndo ? -a.dy : a.dy); break;
       case 'snap':
-        restoreSel(isUndo ? a.before : a.after); this.renderImages(pv); this.renderAudios(pv);
+        restoreSel(isUndo ? a.before : a.after); this.renderObjects(pv);
         if (this.selection && this.selection.pv === pv) { this.selection.box = selBox(this.selection); this.showSelBar(); }
         break;
-      case 'objs': restoreObjs(pv, isUndo ? a.before : a.after); this.renderImages(pv); this.renderAudios(pv); break;
+      case 'objs': restoreObjs(pv, isUndo ? a.before : a.after); this.renderObjects(pv); break;
       case 'recolor': a.strokes.forEach((s, i) => { s.color = isUndo ? a.from[i] : a.to; }); break;
       case 'addpage':
         if (isUndo) {
@@ -1692,6 +1826,19 @@ export function drawStroke(ctx, st, dark = false) {
   } else if (pts.length === 1) {
     applyInk(ctx, st, dark);
     dot(ctx, pts[0], widthAt(st, pts[0][2], pts[0], pts[0]));
+  } else if (st.dash === 'dash' || st.dash === 'dot') {
+    // gestrichelt/gepunktet: ein durchgehender Pfad mit gleichmäßiger Breite
+    applyInk(ctx, st, dark);
+    const avgP = pts.reduce((s, q) => s + q[2], 0) / pts.length;
+    const w = Math.max(0.8, widthAt({ ...st, kind: st.kind === 'calli' ? 'ball' : st.kind }, avgP, pts[0], pts[1]));
+    ctx.lineWidth = w;
+    ctx.setLineDash(st.dash === 'dot' ? [0.01, w * 2.4] : [w * 3.2, w * 2.4]);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length - 1; i++) { const m = mid(pts[i], pts[i + 1]); ctx.quadraticCurveTo(pts[i][0], pts[i][1], m[0], m[1]); }
+    ctx.lineTo(pts[pts.length - 1][0], pts[pts.length - 1][1]);
+    ctx.stroke();
   } else {
     applyInk(ctx, st, dark);
     let prev = pts[0];
@@ -1743,6 +1890,7 @@ function selBox(sel) {
   for (const s of sel.strokes) for (const [x, y] of s.points) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
   for (const im of sel.images) { x0 = Math.min(x0, im.x); y0 = Math.min(y0, im.y); x1 = Math.max(x1, im.x + im.w); y1 = Math.max(y1, im.y + im.h); }
   for (const au of sel.audios) { x0 = Math.min(x0, au.x); y0 = Math.min(y0, au.y); x1 = Math.max(x1, au.x + 120); y1 = Math.max(y1, au.y + 40); }
+  for (const o of [...(sel.texts || []), ...(sel.formulas || [])]) { x0 = Math.min(x0, o.x); y0 = Math.min(y0, o.y); x1 = Math.max(x1, o.x + (o._w || 200)); y1 = Math.max(y1, o.y + (o._h || 40)); }
   if (x0 === Infinity) return { x: 0, y: 0, w: 0, h: 0 };
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
@@ -1753,12 +1901,16 @@ function snapSel(sel) {
     strokes: [...sel.strokes].map(st => [st, st.points.map(p => p.slice()), st.width, st.color]),
     images: [...sel.images].map(im => [im, { x: im.x, y: im.y, w: im.w, h: im.h }]),
     audios: [...sel.audios].map(au => [au, { x: au.x, y: au.y }]),
+    texts: [...(sel.texts || [])].map(t => [t, { x: t.x, y: t.y }]),
+    formulas: [...(sel.formulas || [])].map(f => [f, { x: f.x, y: f.y, size: f.size, _w: f._w, _h: f._h }]),
   };
 }
 function restoreSel(snap) {
   for (const [st, pts, w, c] of snap.strokes) { st.points = pts.map(p => p.slice()); st.width = w; st.color = c; }
   for (const [im, v] of snap.images) Object.assign(im, v);
   for (const [au, v] of snap.audios) Object.assign(au, v);
+  for (const [t, v] of snap.texts || []) Object.assign(t, v);
+  for (const [f, v] of snap.formulas || []) Object.assign(f, v);
 }
 function transformSel(sel, fn, scale) {
   for (const st of sel.strokes) {
@@ -1772,14 +1924,56 @@ function transformSel(sel, fn, scale) {
     else { const [cx, cy] = fn([im.x + im.w / 2, im.y + im.h / 2]); im.x = Math.round(cx - im.w / 2); im.y = Math.round(cy - im.h / 2); }
   }
   for (const au of sel.audios) { const [x, y] = fn([au.x + 60, au.y + 20]); au.x = Math.round(x - 60); au.y = Math.round(y - 20); }
+  for (const t of sel.texts || []) {
+    const [x, y] = fn([t.x + (t._w || 200) / 2, t.y + (t._h || 40) / 2]);
+    t.x = Math.round(x - (t._w || 200) / 2); t.y = Math.max(0, Math.round((y - (t._h || 40) / 2) / LINE) * LINE);
+  }
+  for (const f of sel.formulas || []) {
+    const [x, y] = fn([f.x, f.y]);
+    f.x = Math.round(x); f.y = Math.round(y);
+    if (scale !== 1) { f.size = Math.max(12, Math.round(f.size * scale)); f._w = (f._w || 100) * scale; f._h = (f._h || 40) * scale; }
+  }
 }
 function snapObjs(pv) {
-  return { strokes: [...pv.data.strokes], images: [...pv.data.images], audios: [...pv.data.audios] };
+  return { strokes: [...pv.data.strokes], images: [...pv.data.images], audios: [...pv.data.audios], texts: [...pv.data.texts], formulas: [...(pv.data.formulas || [])] };
 }
 function restoreObjs(pv, snap) {
   pv.data.strokes = [...snap.strokes];
   pv.data.images = [...snap.images];
   pv.data.audios = [...snap.audios];
+  pv.data.texts = [...snap.texts];
+  pv.data.formulas = [...snap.formulas];
+}
+
+/** LaTeX mit KaTeX darstellen (sicher: keine HTML-Befehle erlaubt). */
+let katexReady = null;
+function loadKatex() {
+  if (!katexReady) {
+    katexReady = new Promise((resolve, reject) => {
+      const css = document.createElement('link');
+      css.rel = 'stylesheet'; css.href = 'vendor/katex/katex.min.css';
+      document.head.appendChild(css);
+      const s = document.createElement('script');
+      s.src = 'vendor/katex/katex.min.js';
+      s.onload = () => resolve(window.katex);
+      s.onerror = () => { katexReady = null; reject(new Error('KaTeX konnte nicht geladen werden')); };
+      document.head.appendChild(s);
+    });
+  }
+  return katexReady;
+}
+export function renderLatex(el, latex) {
+  el.textContent = latex;
+  loadKatex().then(k => {
+    if (el._latex !== latex && el._latex != null) return;
+    try { k.render(latex, el, { throwOnError: false, displayMode: false, trust: false, strict: 'ignore', maxSize: 20, maxExpand: 200 }); }
+    catch { el.textContent = latex; }
+  }).catch(() => {});
+}
+
+function textToHTMLLocal(text) {
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  return String(text || '').split(/\r?\n/).map(l => `<div>${l ? esc(l) : '<br>'}</div>`).join('');
 }
 function fmtDur(sec) {
   sec = Math.round(sec || 0);
